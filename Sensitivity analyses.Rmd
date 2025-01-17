@@ -1,0 +1,935 @@
+---
+title: "eFig8 new"
+author: "Noelle"
+date: "2024-08-08"
+output: html_document
+---
+This document contains all sensitivity analyses.
+
+#CSF AB42/40 as outcome
+
+##Set cutoff using AB42/40 as outcome first
+```{r cutoff set, include=F}
+library(readxl)
+library(boot)
+library(pROC)
+library(tidyverse)
+lumi <- read_xlsx("BFMC_data.xlsx")
+table(lumi$csf_status)
+lumi$csf_status_ab <- ifelse(lumi$ab42_40 <= 0.072, 1, 0)
+lumi <- lumi %>% drop_na(csf_status_ab)
+lumi$csf_status_ab <- as.factor(as.numeric(lumi$csf_status_ab))
+
+##For Lumi plasma p-tau217----
+f_thresholds <- function(data, indices){
+  d <- data[indices, ]
+  roc_curve <- pROC::roc(csf_status_ab~pl_ptau217, data=d, quiet=T)
+  coordinates <- coords(roc_curve, x="all", transpose=F)
+  
+  #Specificity at 90%
+  find_threshold <- coordinates[coordinates$specificity >= 0.895 & coordinates$specificity <= 0.904, ]
+  threshold_spec90 <- if (nrow(find_threshold) > 0) {
+    find_threshold[which.max(find_threshold$sensitivity), 1]
+  } else {
+    NA
+  }
+  
+  # #Specificity at 95%
+  find_threshold_spec95 <- coordinates[coordinates$specificity >= 0.946 & coordinates$specificity <= 0.954, ]
+  threshold_spec95 <- if (nrow(find_threshold_spec95) > 0) {
+    find_threshold_spec95[which.max(find_threshold_spec95$sensitivity), 1]
+  } else {
+    NA
+  }
+  
+  #Sensitivity at 95
+  find_threshold_sens95 <- coordinates[coordinates$sensitivity >= 0.94555 & coordinates$sensitivity <= 0.954, ]
+  threshold_sens95 <- if (nrow(find_threshold_sens95) > 0) {
+    find_threshold_sens95[which.max(find_threshold_sens95$specificity), 1]
+  } else {
+    NA
+  }
+  #Youden
+  threshold_youden1 <- coords(roc_curve, "best", best.method = "youden", ret = "threshold")
+  threshold_youden <- threshold_youden1$threshold
+  return(c(threshold_spec90, threshold_spec95, threshold_sens95, threshold_youden))
+}
+
+set.seed(123)
+boot_res <- boot(data = lumi, statistic = f_thresholds, R = 2000)
+
+###mean of bootstraps and 95%CIs and median ----
+#90% Specificity
+lumi_90spec <- mean(boot_res$t[,1], na.rm=T)
+lumi_ci_spec90 <- boot.ci(boot_res, type = "perc",seed=12345,index = 1)
+lumi_90spec_ci_low <- round(lumi_ci_spec90$percent[4],3)
+lumi_90spec_ci_upper <-round(lumi_ci_spec90$percent[5],3)
+lumi_ci_spec90_formatted <- paste0(round(lumi_90spec,3), " (", lumi_90spec_ci_low, "-",lumi_90spec_ci_upper, ")")
+
+#95% Specificity
+lumi_95spec <- mean(boot_res$t[,2], na.rm=T)
+lumi_ci_spec95 <- boot.ci(boot_res, type = "perc",seed=12345,index = 2)
+lumi_95spec_ci_low <- round(lumi_ci_spec95$percent[4],3)
+lumi_95spec_ci_upper <-round(lumi_ci_spec95$percent[5],3)
+lumi_ci_spec95_formatted <- paste0(round(lumi_95spec,3), " (", lumi_95spec_ci_low, "-",lumi_95spec_ci_upper, ")")
+
+#95% Sensitivity
+lumi_95sens <-mean(boot_res$t[,3], na.rm=T)
+lumi_ci_sens95 <- boot.ci(boot_res, type = "perc",seed=12345,index = 3)
+lumi_95sens_ci_low <- round(lumi_ci_sens95$percent[4],3)
+lumi_95sens_ci_upper <-round(lumi_ci_sens95$percent[5],3)
+lumi_ci_sens95_formatted <- paste0(round(lumi_95sens,3), " (", lumi_95sens_ci_low, "-",lumi_95sens_ci_upper, ")")
+```
+
+##Analyses
+```{r run analyses, include=FALSE}
+library(dplyr)
+library(pROC)
+library(boot)
+library(cutpointr)
+
+# Example list of datasets
+library(readxl)
+BFMC <- read_xlsx("BFMC_data.xlsx")
+BFMC$csf_status_ab <- ifelse(BFMC$ab42_40 <= 0.072, 1, 0)
+  
+Goth <- read_xlsx("Gothenburg_data.xlsx")
+Goth$csf_status_ab <- ifelse(Goth$ab42_40 <= 0.072, 1, 0)
+
+BBRC <- read_xlsx("BBRC_data.xlsx")
+BBRC$csf_status_ab <- ifelse(BBRC$ab42_40 <= 0.072, 1, 0)
+
+Bres <- read_xlsx("Brescia_data.xlsx")
+Bres$ab42_40 <- as.numeric(as.character(Bres$ab42_40))
+Bres <- Bres %>% drop_na(ab42_40, pl_ptau217)
+Bres$csf_status_ab <- ifelse(Bres$ab42_40 <= 0.072, 1, 0)
+
+BFPC <- read_xlsx("BFPC_data.xlsx")
+BFPC$csf_status_ab <- ifelse(BFPC$ab42_40 <= 0.072, 1, 0)
+
+datasets <- list(BFMC, Goth, BBRC, Bres, BFPC)
+dataset_names <- c("BFMC", "Gothenburg", "BBRC", "Brescia", "BFPC")
+
+run_analysis <- function(dataset, name) {
+  
+  dataset$pl_ptau217 <- as.numeric(dataset$pl_ptau217)
+  dataset$csf_status_ab <- as.factor(as.numeric(dataset$csf_status_ab))
+  dataset <- dataset %>% drop_na(csf_status_ab)
+  
+  dataset$ptau217_spec90 <- ifelse(dataset$pl_ptau217 > 0.24, 1, 0) #0.24
+  dataset$ptau217_spec95 <- ifelse(dataset$pl_ptau217 > 0.30, 1, 0) #0.30
+  dataset$ptau217_sens95 <- ifelse(dataset$pl_ptau217 > 0.16, 1, 0) #0.16
+  
+  roc_curve <- pROC::roc(csf_status_ab~pl_ptau217, data=dataset, quiet=T)
+  coordinates <- coords(roc_curve, x="all", transpose=F)
+  auc <- ci.auc(roc_curve)[2] #AUC will be bootstrapped 2000 times, already included in function
+  
+  f_comp_stats <- function(data, indices) {
+    d <- as.data.frame(data[indices,])
+
+    #Create confusion matrix
+    v_tp=sum(d$csf_status_ab==1 & d$ptau217_spec90==1)
+    v_fp=sum(d$csf_status_ab==0 & d$ptau217_spec90==1)
+    v_tn=sum(d$csf_status_ab==0 & d$ptau217_spec90==0)
+    v_fn=sum(d$csf_status_ab==1 & d$ptau217_spec90==0)
+    
+    #Sensitivity and specificity
+    sens <- v_tp / (v_tp + v_fn)
+    spec <- v_tn / (v_tn + v_fp)
+    
+    #Accuracy
+    acc=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+    
+    #Calculate PPV and NPV (cutpointr)
+    PPV=ppv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    
+    NPV=npv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    
+    return(c(sens, spec, acc, PPV, NPV))
+  }
+  
+  set.seed(12345)
+  boot_results <- boot(data = dataset, statistic = f_comp_stats, R = 2000)
+  
+  # Add results to dataframe, will be used for plotting
+  results_1cp <- data.frame(
+    auc = round(ci.auc(roc_curve)[2],3),
+    auc_ci_lower = round(ci.auc(roc_curve)[1],3),
+    auc_ci_upper = round(ci.auc(roc_curve)[3],3),
+    sensitivity = round(boot_results$t0[1], 3),
+    sens_ci_lower = round(quantile(boot_results$t[,1], c(0.025, 0.975), na.rm=T)[1],3),
+    sens_ci_upper = round(quantile(boot_results$t[,1], c(0.025, 0.975), na.rm=T)[2],3),
+    specificity = round(boot_results$t0[2], 3),
+    sp_ci_lower = round(quantile(boot_results$t[,2], c(0.025, 0.975), na.rm=T)[1],3),
+    sp_ci_upper = round(quantile(boot_results$t[,2], c(0.025, 0.975), na.rm=T)[2],3),
+    accuracy = round(boot_results$t0[3], 3),
+    acc_ci_lower = round(quantile(boot_results$t[,3], c(0.025, 0.975), na.rm=T)[1],3),
+    acc_ci_upper = round(quantile(boot_results$t[,3], c(0.025, 0.975), na.rm=T)[2],3),
+    PPV = round(boot_results$t0[4], 3),
+    ppv_ci_lower = round(quantile(boot_results$t[,4], c(0.025, 0.975), na.rm=T)[1],3),
+    ppv_ci_upper = round(quantile(boot_results$t[,4], c(0.025, 0.975), na.rm=T)[2],3),
+    NPV = round(boot_results$t0[5], 3),
+    npv_ci_lower = round(quantile(boot_results$t[,5], c(0.025, 0.975), na.rm=T)[1],3),
+    npv_ci_upper = round(quantile(boot_results$t[,5], c(0.025, 0.975), na.rm=T)[2],3),
+    intermediate_n = NA,
+    intermediate_cilow = NA,
+    intermediate_cihigh = NA,
+    intermediate_n_percentage=NA,
+    intermediate_n_percentage_low=NA,
+    intermediate_n_percentage_high=NA,
+    stringsAsFactors = FALSE,
+    row.names = "1 Cutpoint")
+  
+  # Filter out intermediate participants
+  dataset$greyzone <- ifelse(dataset$ptau217_sens95 == 0 | dataset$ptau217_spec95 == 1, 1, 0) #Intermediate values get a 0
+  dataset.filtered <- dataset %>% filter(greyzone ==1)
+  dataset.greyzone <- dataset %>% filter(greyzone == 0)
+  
+  f_greyzone <- function(data, indices, roc_curve){
+    d <- data[indices, ]
+    d$greyzone <- ifelse(d$ptau217_sens95 == 0| d$ptau217_spec95 == 1, 1, 0)
+    intermediate_n <- length(which(d$greyzone ==0))
+    intermediate_npercent <- round((length(which(d$greyzone == 0)) / nrow(d)) * 100, 3)
+    return(c(intermediate_npercent, intermediate_n))
+  }
+  
+  # Bootstrap to get 95%CI of #n intermediates
+  set.seed(12345)
+  boot_results_greyzone <- boot(data = dataset, statistic = f_greyzone, R = 2000, roc_curve = roc_curve)
+  greyzone_CI <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 2)
+  greyzone_percentage <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 1)
+  
+  # Repeat bootstrap in filtered sample, remove intermediate participants
+  set.seed(12345)
+  boot_results_twocutpoints <- boot(data = dataset.filtered, statistic = f_comp_stats, R = 2000)
+  
+  # Add results to dataframe for plotting 
+  results_twocp <- data.frame(
+    auc = round(ci.auc(roc_curve)[2],3),
+    auc_ci_lower = round(ci.auc(roc_curve)[1],3),
+    auc_ci_upper = round(ci.auc(roc_curve)[3],3),
+    sensitivity = round(boot_results_twocutpoints$t0[1], 3),
+    sens_ci_lower = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975), na.rm=T)[1],3),
+    sens_ci_upper = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975), na.rm=T)[2],3),
+    specificity = round(boot_results_twocutpoints$t0[2], 3),
+    sp_ci_lower = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975), na.rm=T)[1],3),
+    sp_ci_upper = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975), na.rm=T)[2],3),
+    accuracy = round(boot_results_twocutpoints$t0[3], 3),
+    acc_ci_lower = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975), na.rm=T)[1],3),
+    acc_ci_upper = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975), na.rm=T)[2],3),
+    PPV = round(boot_results_twocutpoints$t0[4], 3),
+    ppv_ci_lower = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975), na.rm=T)[1],3),
+    ppv_ci_upper = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975), na.rm=T)[2],3),
+    NPV = round(boot_results_twocutpoints$t0[5], 3),
+    npv_ci_lower = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975), na.rm=T)[1],3),
+    npv_ci_upper = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975), na.rm=T)[2],3),
+    intermediate_n = round(boot_results_greyzone$t0[2],3),
+    intermediate_cilow = round(greyzone_CI$normal[,2],3),
+    intermediate_cihigh = round(greyzone_CI$normal[,3],3),
+    intermediate_n_percentage=round(boot_results_greyzone$t0[1],3),
+    intermediate_n_percentage_low=round(greyzone_percentage$normal[,2],3),
+    intermediate_n_percentage_high=round(greyzone_percentage$normal[,3],3),
+    stringsAsFactors = FALSE,
+    row.names = "2 Cutpoints")
+  
+  merged <- rbind(results_1cp, results_twocp) %>%
+    mutate(Cohort = name) %>%
+    rownames_to_column(var = "Approach")
+  
+  return(merged)
+}
+
+results_list <- list()
+output_directory <- "CSF4240/"
+
+# Loop over datasets and apply the function
+for (i in seq_along(datasets)) {
+  dataset <- datasets[[i]]
+  name <- dataset_names[i]
+  results <- run_analysis(dataset, name)
+    openxlsx::write.xlsx(results, file=paste0(output_directory, "CSFAB4240_new2_", name, ".xlsx"))
+}
+
+```
+
+##Figures CSF 42/40
+
+```{r Figures 1cp, echo=F}
+library(readxl)
+df1 <- read_xlsx("CSFAB4240_new2_BFMC.xlsx") 
+names(df1)[1] <- "Approach"
+df2 <-  read_xlsx("CSFAB4240_new2_Gothenburg.xlsx")
+names(df2)[1] <- "Approach"
+df3 <-  read_xlsx("CSFAB4240_new2_BBRC.xlsx")
+names(df3)[1] <- "Approach"
+df4 <-  read_xlsx("CSFAB4240_new2_Brescia.xlsx")
+names(df4)[1] <- "Approach"
+df5 <-  read_xlsx("CSFAB4240_BFPC.xlsx")
+names(df5)[1] <- "Approach"
+
+merged_results <- rbind(df1, df2, df3, df4, df5)
+
+#1CP
+library(tidyverse)
+merged_results <- merged_results %>% filter(Approach %in% c("1 Cutpoint"))
+merged_results$plotnames <- as.factor(c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")) 
+merged_results$plotcolors <- c("1", "2", "3", "4", "5")
+
+map_to_color <- function(x) {
+  color_mapping <- c("1" = "#374e55ff",
+                     "2" ="#DF8F44FF", 
+                     "3" = "#00A1D5FF",
+                     "4" = "#B24745FF",
+                     "5" = "#79AF97FF")
+  return(color_mapping[as.character(x)])
+}
+
+merged_results$color_plot <- map_to_color(merged_results$plotcolors)
+
+#Accuracy plot----
+tick_positions <- seq(60, 100, by = 10)
+
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=accuracy*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$accuracy[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = acc_ci_upper*100, ymin = acc_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", accuracy*100, acc_ci_lower*100, acc_ci_upper*100)), position = position_dodge(width=0.5), size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "Accuracy (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+
+#PPV plot----
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=PPV*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$PPV[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = ppv_ci_upper*100, ymin = ppv_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", PPV*100, ppv_ci_lower*100, ppv_ci_upper*100)), position = position_dodge(width=0.5), size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "PPV (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+#NPV plot---- 
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=NPV*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$NPV[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = npv_ci_upper*100, ymin = npv_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", NPV*100, npv_ci_lower*100, npv_ci_upper*100)), position = position_dodge(width=0.5),size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "NPV (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+#AUC----
+tick_positions <- seq(0.9, 1, by = 0.05)
+
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                               levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=auc, color = color_plot)) +
+  geom_hline(yintercept = merged_results$auc[1], color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = auc_ci_upper, ymin = auc_ci_lower),width=0.15, linewidth = 0.5,position=position_dodge(0.2))+
+  geom_point(position=position_dodge(0.2),size=4)+
+  geom_text(aes(y = 1.06, label = sprintf("%.2f (%.2f-%.2f)", auc, auc_ci_lower, auc_ci_upper)), position = position_dodge(width=0.2), size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(0.85,1.15), breaks=seq(0.85, 1.15, by=0.05), expand=c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "AUC") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+```
+
+```{r Figures 2cp, echo=F}
+library(readxl)
+merged_results <- rbind(df1, df2, df3, df4, df5)
+
+#2CP
+library(tidyverse)
+merged_results <- merged_results %>% filter(Approach %in% c("2 Cutpoints"))
+merged_results$plotnames <- as.factor(c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")) #change names to desired y-axis
+merged_results$plotcolors <- c("1", "2", "3", "4", "5")
+
+map_to_color <- function(x) {
+  color_mapping <- c("1" = "#374e55ff",
+                     "2" ="#DF8F44FF", 
+                     "3" = "#00A1D5FF",
+                     "4" = "#B24745FF",
+                     "5" = "#79AF97FF")
+  return(color_mapping[as.character(x)])
+}
+
+merged_results$color_plot <- map_to_color(merged_results$plotcolors)
+
+#Accuracy plot----
+tick_positions <- seq(60, 100, by = 10)
+
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=accuracy*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$accuracy[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = acc_ci_upper*100, ymin = acc_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", accuracy*100, acc_ci_lower*100, acc_ci_upper*100)), position = position_dodge(width=0.5), size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "Accuracy (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+#PPV plot----
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=PPV*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$PPV[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = ppv_ci_upper*100, ymin = ppv_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", PPV*100, ppv_ci_lower*100, ppv_ci_upper*100)), position = position_dodge(width=0.5), size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "PPV (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+#NPV plot---- 
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                                levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),y=NPV*100, color = color_plot)) +
+  geom_hline(yintercept = (merged_results$NPV[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  coord_flip()+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                    ymax = npv_ci_upper*100, ymin = npv_ci_lower*100),width=0.15, linewidth = 0.5,position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5),size=4)+
+  geom_text(aes(y=110, label = sprintf("%.f (%.f-%.f)", NPV*100, npv_ci_lower*100, npv_ci_upper*100)), position = position_dodge(width=0.5),size = 4) +
+  scale_x_discrete(limits = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC"))+
+  scale_y_continuous(limits=c(60,120), breaks=seq(60,120, by = 10), expand = c(0,0))+
+  scale_color_identity(guide = "none")+
+  labs(title = element_blank(),x = element_blank(),y = "NPV (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(face = "bold"))
+
+#Intermediate----
+
+ggplot(data=merged_results, aes(x=factor(plotnames, 
+                                         levels = c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")),y=intermediate_n_percentage, fill = color_plot)) +
+  geom_bar(color="black",stat = "identity")+
+  geom_errorbar(aes(x=factor(plotnames,level = c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")), 
+                    ymax = intermediate_n_percentage_high, ymin = intermediate_n_percentage_low),width=0.2, size =0.5, linewidth = 0.5,position=position_dodge(0.2))+
+    scale_y_continuous(limits=c(0,25),breaks = seq(0,25, by=5),expand =c(0,0))+
+  geom_text(aes(label = sprintf("%.1f", intermediate_n_percentage)), position = position_dodge(width=0.75), vjust=-1.2, hjust=-0.05, size = 4) +
+  scale_fill_identity(guide = "none")+
+  labs(title = element_blank(),x = "Cohort",y = "Intermediate values (%)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(size=11, angle=45, hjust=1),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_text(face = "bold", size=11),
+        axis.title.y= element_text(face = "bold", size=11),
+    panel.border = element_rect(linewidth = 0.5, fill = NA, color=NA))  
+ 
+```
+
+#Excluding those without CSF data available in primary care
+
+##Analyses
+```{r run analysis no CSF}
+library(boot)
+library(cutpointr) #Used for PPV and NPV
+library(pROC)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+
+df5 <-  read_xlsx("NOCSF_BFPC.xlsx")
+lumi$ptau217_spec90 <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
+lumi$ptau217_spec95 <- ifelse(lumi$pl_ptau217 > 0.34, 1, 0) 
+lumi$ptau217_sens95 <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0) 
+
+
+#SECTION 2 ----
+
+##Fit ROC curve and define threshold at 90% specificity ----
+
+roc_curve <- pROC::roc(csf_status~pl_ptau217, data=lumi, quiet=T)
+coordinates <- coords(roc_curve, x="all", transpose=F)
+auc <- ci.auc(roc_curve)[2] #AUC will be bootstrapped 2000 times, already included in function
+
+##Calculate Accuracy, PPV, NPV and 95% CIs----
+
+f_comp_stats <- function(data, indices) {
+  d <- as.data.frame(data[indices,])
+  
+  #Create confusion matrix
+  v_tp=sum(d$csf_status==1 & d$ptau217_spec90==1)
+  v_fp=sum(d$csf_status==0 & d$ptau217_spec90==1)
+  v_tn=sum(d$csf_status==0 & d$ptau217_spec90==0)
+  v_fn=sum(d$csf_status==1 & d$ptau217_spec90==0)
+  
+  #Sensitivity and specificity
+  sens <- v_tp / (v_tp + v_fn)
+  spec <- v_tn / (v_tn + v_fp)
+  
+  #Accuracy
+  acc=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+  
+  #Calculate PPV and NPV (cutpointr)
+  PPV=ppv(tp = v_tp,fp = v_fp,
+          tn = v_tn,fn = v_fn)
+  
+  NPV=npv(tp = v_tp,fp = v_fp,
+          tn = v_tn,fn = v_fn)
+  
+  return(c(sens, spec, acc, PPV, NPV))
+}
+
+set.seed(12345)
+boot_results <- boot(data = lumi, statistic = f_comp_stats, R = 2000)
+
+
+##Add results to dataframe, will be used for plotting
+results_1cp <- data.frame(
+  auc = round(ci.auc(roc_curve)[2],3),
+  auc_ci_lower = round(ci.auc(roc_curve)[1],3),
+  auc_ci_upper = round(ci.auc(roc_curve)[3],3),
+  accuracy = round(boot_results$t0[3], 3),
+  acc_ci_lower = round(quantile(boot_results$t[,3], c(0.025, 0.975))[1],3),
+  acc_ci_upper = round(quantile(boot_results$t[,3], c(0.025, 0.975))[2],3),
+  PPV = round(boot_results$t0[4], 3),
+  ppv_ci_lower = round(quantile(boot_results$t[,4], c(0.025, 0.975))[1],3),
+  ppv_ci_upper = round(quantile(boot_results$t[,4], c(0.025, 0.975))[2],3),
+  NPV = round(boot_results$t0[5], 3),
+  npv_ci_lower = round(quantile(boot_results$t[,5], c(0.025, 0.975))[1],3),
+  npv_ci_upper = round(quantile(boot_results$t[,5], c(0.025, 0.975))[2],3),
+  intermediate_n = NA,
+  intermediate_cilow = NA,
+  intermediate_cihigh = NA,
+  intermediate_n_percentage=NA,
+  intermediate_n_percentage_low=NA,
+  intermediate_n_percentage_high=NA,
+  stringsAsFactors = FALSE,
+  row.names = "1 Cutpoint")
+
+##Filter out intermediate participants ----
+lumi$greyzone <- ifelse(lumi$ptau217_sens95 == 0 | lumi$ptau217_spec95 == 1, 1, 0) #Intermediate values get a 0
+lumi.filtered <- lumi %>% filter(greyzone ==1)
+lumi.greyzone <- lumi %>% filter(greyzone == 0)
+
+f_greyzone <- function(data, indices, roc_curve){
+  d <- data[indices, ]
+  d$greyzone <- ifelse(d$ptau217_sens95 == 0| d$ptau217_spec95 == 1, 1, 0)
+  intermediate_n <- length(which(d$greyzone ==0))
+  intermediate_npercent <- round((length(which(d$greyzone == 0)) / nrow(d)) * 100, 3)
+  return(c(intermediate_npercent, intermediate_n))
+}
+
+##Bootstrap to get 95%CI of #n intermediates ----
+set.seed(12345)
+boot_results_greyzone <- boot(data = lumi, statistic = f_greyzone, R = 2000, roc_curve = roc_curve)
+greyzone_CI <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 2)
+greyzone_percentage <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 1)
+
+##Repeat bootstrap in filtered sample, remove intermediate participants ----
+set.seed(12345)
+boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
+
+##Add results to dataframe for plotting 
+results_twocp <- data.frame(
+  auc = round(ci.auc(roc_curve)[2],3),
+  auc_ci_lower = round(ci.auc(roc_curve)[1],3),
+  auc_ci_upper = round(ci.auc(roc_curve)[3],3),
+  accuracy = round(boot_results_twocutpoints$t0[3], 3),
+  acc_ci_lower = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[1],3),
+  acc_ci_upper = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[2],3),
+  PPV = round(boot_results_twocutpoints$t0[4], 3),
+  ppv_ci_lower = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975))[1],3),
+  ppv_ci_upper = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975))[2],3),
+  NPV = round(boot_results_twocutpoints$t0[5], 3),
+  npv_ci_lower = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975))[1],3),
+  npv_ci_upper = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975))[2],3),
+  intermediate_n = round(boot_results_greyzone$t0[2],3),
+  intermediate_cilow = round(greyzone_CI$normal[,2],3),
+  intermediate_cihigh = round(greyzone_CI$normal[,3],3),
+  intermediate_n_percentage=round(boot_results_greyzone$t0[1],3),
+  intermediate_n_percentage_low=round(greyzone_percentage$normal[,2],3),
+  intermediate_n_percentage_high=round(greyzone_percentage$normal[,3],3),
+  stringsAsFactors = FALSE,
+  row.names = "2 Cutpoints")
+
+
+#Excel files
+merged <- rbind(results_1cp, results_twocp) %>% 
+  mutate(Cohort = "ADetect")%>%
+  rownames_to_column(var = "Approach") #merge 2 dataframes
+openxlsx::write.xlsx(merged,file="BFPC_NoCSF.xlsx")
+```
+
+
+##Plots
+```{r figure, echo=F}
+
+###Create the plot with adjusted colors
+ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group=csf_status)) +
+  geom_boxplot(aes(alpha = csf_status), fill = "#79AF97FF", position = position_dodge(0.8), width = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2,size = 0.6, color="grey10", alpha=0.45)+
+  scale_alpha_manual(values = c(0.25, 0.75), guide="none", labels = c("0" ="Negatives","1" ="Positives"))+
+  scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5))+
+  geom_hline(yintercept=0.27, linetype="dotted", color="grey20")+
+  scale_x_discrete(labels=c("0" ="Negatives","1" ="Positives"))+
+  labs(x = "AD status", y = "Plasma p-tau217 LumiPulse") +
+  theme_classic()
+
+#Figure
+plot_auc <- cbind(merged[0:2, 2:4])
+colnames(plot_auc) <- c("Measure1", "ci_low", "ci_high")
+plot_auc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_auc$Measure <- c("AUC", "AUC")
+
+plot_acc <- cbind(merged[0:2, 5:7])
+colnames(plot_acc) <- c("Measure1", "ci_low", "ci_high")
+plot_acc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_acc$Measure <- c("Accuracy", "Accuracy")
+
+plot_ppv <- cbind(merged[0:2, 8:10])
+colnames(plot_ppv) <- c("Measure1", "ci_low", "ci_high")
+plot_ppv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_ppv$Measure <- c("PPV", "PPV")
+
+plot_npv <- cbind(merged[0:2, 11:13])
+colnames(plot_npv) <- c("Measure1", "ci_low", "ci_high")
+plot_npv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_npv$Measure <- c("NPV", "NPV")
+
+plot_grey_scd <- cbind(merged[2:2, 17:19])
+colnames(plot_grey_scd) <- c("Measure1", "ci_low", "ci_high")
+
+plotdata <- rbind(plot_auc, plot_acc, plot_ppv, plot_npv)
+plotdata <- plotdata %>% drop_na
+group_order <- c("AUC", "NPV", "PPV", "Accuracy")
+tick_positions <- seq(50, 100, by = 10)
+
+col_ord <- c("1 Cutpoint", "2 Cutpoint")
+
+#plot itself----
+ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 * 100, color=rev(Cutpoint))) +
+  geom_vline(xintercept = tick_positions, color = "grey80", linewidth = 0.5, alpha=0.5) +
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.2, linewidth = 0.5, position = position_dodge(width = 0.8)) +
+  geom_point(position = position_dodge(width = 0.8), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,124),breaks = seq(70,124, by=10),expand =c(0,0))+
+  labs(x = "Percentage", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), group=rev(Cutpoint), x=94), 
+            position = position_dodge(width = 0.8), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#E64B35FF", "#4DBBD5FF"), labels=c("2 cutpoints", "1 cutpoint"), guide="none")+
+  theme_classic
+  theme(axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 10, face = "bold"),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 11),  # Decrease legend text size
+        legend.title = element_text(size = 11))
+
+```
+
+#Using the Youden index to check cutoff differences
+
+##Set up data
+
+#Stats
+```{r run analyses, include=FALSE}
+library(dplyr)
+library(pROC)
+library(boot)
+library(cutpointr)
+
+BFMC <- read.xlsx("BFMC_data.xlsx")
+Goth <- read.xlsx("Gothenburg_data.xlsx")
+BBRC <- read.xlsx("BBRC_data.xlsx")
+Bres <- read.xlsx("Brescia_data.xlsx")
+BFPC <- read.xlsx("BFPC_data.xlsx")
+
+datasets <- list(BFMC, Goth, BBRC, Bres, BFPC)
+dataset_names <- c("BFMC", "Gothenburg", "BBRC", "Brescia", "BFPC")
+
+run_analysis <- function(lumi, name) {
+  
+  lumi$ptau217_spec90 <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
+  lumi$ptau217_youden <- ifelse(lumi$pl_ptau217 > 0.25, 1, 0) 
+
+    f_comp_stats_y <- function(data, indices) {
+      d <- as.data.frame(data[indices,])
+      
+      v_tp=sum(d$csf_status==1 & d$ptau217_spec90==1)
+      v_fp=sum(d$csf_status==0 & d$ptau217_spec90==1)
+      v_tn=sum(d$csf_status==0 & d$ptau217_spec90==0)
+      v_fn=sum(d$csf_status==1 & d$ptau217_spec90==0)
+      
+      #Sensitivity and specificity
+      sens <- v_tp / (v_tp + v_fn)
+      spec <- v_tn / (v_tn + v_fp)
+      
+      #Accuracy
+      acc=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+      
+      #Calculate PPV and NPV (cutpointr)
+      PPV=ppv(tp = v_tp,fp = v_fp,
+              tn = v_tn,fn = v_fn)
+      
+      NPV=npv(tp = v_tp,fp = v_fp,
+              tn = v_tn,fn = v_fn)
+      
+      #Create confusion matrix Youden
+      v_tp_y=sum(d$csf_status==1 & d$ptau217_youden==1)
+      v_fp_y=sum(d$csf_status==0 & d$ptau217_youden==1)
+      v_tn_y=sum(d$csf_status==0 & d$ptau217_youden==0)
+      v_fn_y=sum(d$csf_status==1 & d$ptau217_youden==0)
+      
+      #Sensitivity and specificity Y
+      sens_y <- v_tp_y / (v_tp_y + v_fn_y)
+      spec_y <- v_tn_y / (v_tn_y + v_fp_y)
+      
+      #AccuracyY
+      acc_y=(v_tp_y+v_tn_y)/(v_tp_y+v_tn_y+v_fn_y+v_fp_y)
+      
+      #Calculate PPV and NPV (cutpointr) Y
+      PPV_y=ppv(tp = v_tp_y,fp = v_fp_y,
+              tn = v_tn_y,fn = v_fn_y)
+      
+      NPV_y=npv(tp = v_tp_y,fp = v_fp_y,
+              tn = v_tn_y,fn = v_fn_y)
+      
+      diffsens <- sens - sens_y
+      diffspec <- spec - spec_y
+      diffacc <- acc - acc_y
+      diffPPV <- PPV - PPV_y
+      diffNPV <- NPV - NPV_y
+      
+      return(c(sens, spec, acc, PPV, NPV, sens_y, spec_y, acc_y, PPV_y, NPV_y, diffsens, diffspec, diffacc, diffPPV, diffNPV))
+    }
+
+    set.seed(12345)
+    boot_results <- boot(data = lumi, statistic = f_comp_stats_y, R = 2000)
+    
+    results_youden_comp <- data.frame(
+      Cutpoint = "1 Cutpoint",
+      accuracy1 = round(boot_results$t0[3], 3),
+      acc_ci_lower1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[1],3),
+      acc_ci_upper1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[2],3),
+      PPV1 = round(boot_results$t0[4], 3),
+      ppv_ci_lower1 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[1],3),
+      ppv_ci_upper1 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[2],3),
+      NPV1 = round(boot_results$t0[5], 3),
+      npv_ci_lower1 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[1],3),
+      npv_ci_upper1 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[2],3),
+      
+      accuracy2 = round(boot_results$t0[8], 3),
+      acc_ci_lower2 = round(quantile(boot_results$t[,8], c(0.025, 0.975))[1],3),
+      acc_ci_upper2 = round(quantile(boot_results$t[,8], c(0.025, 0.975))[2],3),
+      PPV2 = round(boot_results$t0[9], 3),
+      ppv_ci_lower2 = round(quantile(boot_results$t[,9], c(0.025, 0.975))[1],3),
+      ppv_ci_upper2 = round(quantile(boot_results$t[,9], c(0.025, 0.975))[2],3),
+      NPV2 = round(boot_results$t0[10], 3),
+      npv_ci_lower2 = round(quantile(boot_results$t[,10], c(0.025, 0.975))[1],3),
+      npv_ci_upper2 = round(quantile(boot_results$t[,10], c(0.025, 0.975))[2],3),
+      stringsAsFactors = FALSE)
+
+      bootstrap_replicates <- boot_results$t
+      
+      # Bootstrapped comparisons between 90% and Youden, Accuracy
+      bootstrap_replicates <- boot_results$t
+      boot_accdiff <- boot_results$t0[13]
+      results_underH0_accdiff <- bootstrap_replicates[,13] - mean(bootstrap_replicates[,13])
+      boot_pvalue_accdiff <- mean(abs(results_underH0_accdiff) >= abs(boot_accdiff))
+      
+      # Bootstrapped comparisons between 90% and Youden, PPV
+      bootstrap_replicates <- boot_results$t
+      boot_ppvdiff <- boot_results$t0[14]
+      results_underH0_ppvdiff <- bootstrap_replicates[,14] - mean(bootstrap_replicates[,14])
+      boot_pvalue_ppvdiff <- mean(abs(results_underH0_ppvdiff) >= abs(boot_ppvdiff))
+      
+      # Bootstrapped comparisons between 90% and Youden, NPV
+      bootstrap_replicates <- boot_results$t
+      boot_npvdiff <- boot_results$t0[15]
+      results_underH0_npvdiff <- bootstrap_replicates[,15] - mean(bootstrap_replicates[,15])
+      boot_pvalue_npvdiff <- mean(abs(results_underH0_npvdiff) >= abs(boot_npvdiff))
+      
+      #Change names dataframe and Column!!!
+      ##pvals_Validate #Validate
+      pvals <- data.frame(
+        Pvals = c(
+          round(boot_pvalue_accdiff, 3),
+          round(boot_pvalue_ppvdiff, 3),
+          round(boot_pvalue_npvdiff, 3)))
+      rownames(pvals) <- c("Accuracy pval", "PPV pval", "NPV pval")
+    return(list(results_youden_comp = results_youden_comp, pvals = pvals))
+}
+
+output_directory <- "Youden/"
+
+for (i in seq_along(datasets)) {
+  lumi <- datasets[[i]]
+  name <- dataset_names[i]
+  results <- run_analysis(lumi, name)
+  openxlsx::write.xlsx(results$results_youden_comp, file=paste0(output_directory, "eFig10_", name, ".xlsx"))
+  openxlsx::write.xlsx(results$pvals, file=paste0(output_directory, "Youdenpvals_", name, ".xlsx"))
+}
+```
+
+#Figures
+
+```{r Figures 1cp, echo=F}
+library(readxl)
+df1 <- read_xlsx("Youden_BFMC.xlsx") 
+names(df1)[1] <- "Approach"
+df2 <-  read_xlsx("Youden_Gothenburg.xlsx")
+names(df2)[1] <- "Approach"
+df3 <-  read_xlsx("Youden_BBRC.xlsx")
+names(df3)[1] <- "Approach"
+df4 <-  read_xlsx("Youden_Brescia.xlsx")
+names(df4)[1] <- "Approach"
+df5 <-  read_xlsx("Youden_BFPC.xlsx")
+names(df5)[1] <- "Approach"
+
+merged_results <- rbind(df1, df2, df3, df4, df5)
+
+plot_acc1 <- cbind(merged_results[0:5, 2:4])
+plot_acc1$group <- c("1", "1", "1", "1", "1")
+colnames(plot_acc1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc2 <- cbind(merged_results[0:5, 11:13])
+plot_acc2$group <- c("2", "2", "2", "2", "2")
+colnames(plot_acc2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc <- rbind(plot_acc1, plot_acc2)
+plot_acc$cohort <- c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC","BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")
+
+plot_ppv1 <- cbind(merged_results[0:5, 5:7])
+plot_ppv1$group <- c("1", "1", "1", "1", "1")
+colnames(plot_ppv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv2 <- cbind(merged_results[0:5, 14:16])
+plot_ppv2$group <- c("2", "2", "2", "2", "2")
+colnames(plot_ppv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv <- rbind(plot_ppv1, plot_ppv2)
+plot_ppv$cohort <- c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC","BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")
+
+plot_npv1 <- cbind(merged_results[0:5, 8:10])
+plot_npv1$group <- c("1", "1", "1", "1", "1")
+colnames(plot_npv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv2 <- cbind(merged_results[0:5, 17:19])
+plot_npv2$group <- c("2", "2", "2", "2", "2")
+colnames(plot_npv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv <- rbind(plot_npv1, plot_npv2)
+plot_npv$cohort <- c("BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC","BF-MC", "Gothenburg", "BBRC", "Brescia", "BF-PC")
+
+tick_positions <- seq(60, 100, by = 10)
+group_order <- c("2", "1")
+
+#Accuracy plot----
+ggplot(data=plot_acc, aes(y=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                          color=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_acc$Measure1[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.4, linewidth = 0.5, position = position_dodge(width = 0.85)) +
+  geom_point(position = position_dodge(width = 0.85), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(60,115),breaks = seq(60,115, by=10),expand =c(0,0)) +
+  labs(x = "Accuracy (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.85), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide = "none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+#PPV plot----
+ggplot(data=plot_ppv, aes(y=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                          color=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_ppv$Measure1[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.4, linewidth = 0.5, position = position_dodge(width = 0.85)) +
+  geom_point(position = position_dodge(width = 0.85), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(60,115),breaks = seq(60,115, by=10),expand =c(0,0)) +
+  labs(x = "PPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.85), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide = "none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+
+#NPV plot---- 
+ggplot(data=plot_npv, aes(y=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")), 
+                          color=factor(cohort, levels = c("BF-PC", "Brescia", "BBRC", "Gothenburg", "BF-MC")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_npv$Measure1[1])*100, color = "#374e55ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.4, linewidth = 0.5, position = position_dodge(width = 0.85)) +
+  geom_point(position = position_dodge(width = 0.85), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(60,115),breaks = seq(60,115, by=10),expand =c(0,0)) +
+  labs(x = "NPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.85), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#B24745FF", "#00A1D5FF", "#DF8F44FF", "#374e55ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide = "none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+```

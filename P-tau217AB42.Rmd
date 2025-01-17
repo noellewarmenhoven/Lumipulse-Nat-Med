@@ -1,0 +1,1019 @@
+---
+title: "CTAD"
+author: "Noelle"
+date: "2024-10-24"
+output: html_document
+---
+This document contains the code used for analyzing p-tau217/AB42 performances, compared to p-tau217.
+
+```{r setup, include=FALSE, echo=F}
+library(readxl)
+library(tidyverse)
+library(boot)
+library(cutpointr) 
+library(pROC)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(readxl)
+library(ggpubr)
+
+BFMC <-read_xlsx("BFMC_data.xlsx") 
+BFMC$ptau217_ab42 <- (BFMC$pl_ptau217)/(BFMC$ab42)
+BFMC <- BFMC %>% drop_na(ptau217_ab42)
+
+BFPC <- read_xlsx("BFPC_data.xlsx") 
+BFPC$ptau217_ab42 <- (BFPC$pl_ptau217)/(BFPC$ab42)
+BFPC <- BFPC %>% drop_na(ptau217_ab42)
+
+BBRC <-  read_xlsx("BBRC_data.xlsx") 
+BBRC$ab42 <- as.numeric(BBRC$ab42)
+BBRC$ptau217_ab42 <- (BBRC$pl_ptau217)/(BBRC$ab42)
+BBRC <- BBRC %>% drop_na(ptau217_ab42)
+
+Bres <-  read_xlsx("Brescia_data.xlsx") 
+Bres$ptau217_ab42 <- (Bres$pl_ptau217)/(Bres$ab42)
+Bres$ptau217_ab42[is.infinite(Bres$ptau217_ab42)] <- NA
+Bres <- Bres %>% drop_na(ptau217_ab42)
+
+Goth <- read_xlsx("Gothenburg_data.xlsx") 
+Goth$ab42 <- as.numeric(as.character(Goth$ab42))
+Goth$ptau217_ab42 <- (Goth$pl_ptau217)/(Goth$ab42)
+Goth <- Goth %>% drop_na(ptau217_ab42)
+
+pooled <- rbind(BFMC, BBRC, Bres, Goth)
+```
+
+#LUMI p-tau217 VS. p-tau217/AB42 (pooled)
+
+```{r boxplots, echo=F}
+
+datasets <- list(pooled, BFPC)
+dataset_names <- c("Pooled", "BFPC")
+colorlist <- c("#3c5488ff","#79AF97FF")
+output_directory <- "LP/"
+
+for (i in seq_along(datasets)) {
+  lumi <- datasets[[i]]
+  name <- dataset_names[i]
+  colorplot <- colorlist[i]
+  lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+  ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group=csf_status)) +
+    geom_boxplot(aes(alpha = csf_status), fill = colorplot, position = position_dodge(0.8), width = 0.7, outlier.shape = NA) +
+    geom_jitter(width = 0.2,size = 0.6, color="grey10", alpha=0.45)+
+    scale_alpha_manual(values = c(0.25, 0.75), labels = c("0" ="Negatives","1" ="Positives"), guide="none")+
+    scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5))+
+    geom_hline(yintercept=0.27, linetype="dotted", color="grey20")+
+    scale_x_discrete(labels=c("0" ="Negatives","1" ="Positives"))+
+    labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
+    theme_classic()+
+    stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
+
+  ggsave(paste0(output_directory,"Boxplot_ptau217_", name, ".pdf"),device = "pdf",width = 100, dpi=500, height = 80, units = "mm")
+  
+  ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group=csf_status)) +
+    geom_boxplot(aes(alpha = csf_status), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, fill=colorplot) +
+    geom_jitter(width = 0.2,size = 0.6, color="grey10", alpha=0.45)+
+    scale_alpha_manual(values = c(0.25, 0.75), labels = c("0" ="Negatives","1" ="Positives"), guide="none")+
+    scale_y_continuous(limits = c(0, .15), breaks = seq(0, .15, by = 0.05))+
+    geom_hline(yintercept=0.008, linetype="dotted", color="grey20")+
+    scale_x_discrete(labels=c("0" ="Negatives","1" ="Positives"))+
+    labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+    theme_classic()+
+    stat_compare_means(method="t.test", label="p.signif", label.x=1.5)#, label.x = 1.5, label.y = 3.0)
+
+  ggsave(paste0(output_directory,"Boxplot_ptau217AB42_", name, ".pdf"),device = "pdf",width = 100, dpi=500, height = 80, units = "mm")
+
+}
+
+```
+
+```{r run comparison}
+
+datasets <- list(pooled,BFPC)
+dataset_names <- c("Pooled", "BFPC")
+
+run_analysis <- function(lumi, name) {
+  lumi$ptau217_ab42 <- (lumi$pl_ptau217)/(lumi$ab42)
+  lumi <- lumi %>% drop_na(ptau217_ab42)
+
+  lumi$ptau217_spec90_lumi <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
+  lumi$ptau217_spec95_lumi <- ifelse(lumi$pl_ptau217 > 0.34, 1, 0)
+  lumi$ptau217_sens95_lumi <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0)
+  
+  lumi$ptau217_ab42_spec90 <- ifelse(lumi$ptau217_ab42 > 0.008, 1, 0) 
+  lumi$ptau217_ab42_spec95 <- ifelse(lumi$ptau217_ab42 > 0.009, 1, 0)
+  lumi$ptau217_ab42_sens95 <- ifelse(lumi$ptau217_ab42 > 0.007, 1, 0)
+ 
+  biomarkers <- c("pl_ptau217", "ptau217_ab42")
+  
+  results_delong <- list()
+  index <- 1
+  
+  for (i in seq_along(biomarkers)){
+    for (j in seq_along(biomarkers)){ 
+      if (i < j) {
+        predictor1 <- biomarkers[i]
+        predictor2 <- biomarkers[j]
+        
+        formula1 <- as.formula(paste("csf_status~",predictor1, collapse=""))
+        formula2 <- as.formula(paste("csf_status~",predictor2, collapse=""))
+        
+        roc_curve1 <- pROC::roc(formula1, data=lumi, quiet=T)
+        roc_curve2 <- pROC::roc(formula2, data=lumi,quiet=T)
+        
+        res <- roc.test(roc_curve1, roc_curve2, method = "delong")
+        
+        long <- data.frame(
+          comp = paste(predictor1, predictor2, sep=" vs. "),
+          auc1a = round(roc_curve1$auc,3),
+          auc2a = round(roc_curve2$auc,3),
+          pval = round(res$p.value,3),
+          auc1_ci_low = round(ci.auc(roc_curve1)[1],3),
+          auc1_ci_high =round(ci.auc(roc_curve1)[3],3),
+          auc2_ci_low =round(ci.auc(roc_curve2)[1],3),
+          auc2_ci_high = round(ci.auc(roc_curve2)[3],3)
+        )
+        
+        results_delong[[length(results_delong) + 1]] <- long
+        index <- index + 1
+      }
+    }
+  }
+  results_delong <- do.call(rbind.data.frame, results_delong)
+  
+  f_comp_stats <- function(data, indices) {
+    d <- as.data.frame(data[indices,])
+    
+    #Create confusion matrix for p-tau217
+    v_tp=sum(d$csf_status==1 & d$ptau217_spec90_lumi==1)#change
+    v_fp=sum(d$csf_status==0 & d$ptau217_spec90_lumi==1)
+    v_tn=sum(d$csf_status==0 & d$ptau217_spec90_lumi==0)
+    v_fn=sum(d$csf_status==1 & d$ptau217_spec90_lumi==0)
+    acc_lumi=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+    PPV_lumi=ppv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    NPV_lumi=npv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    
+    #Create confusion matrix for p-tau217/ab42
+    v_tp_c=sum(d$csf_status==1 & d$ptau217_ab42_spec90==1) #change
+    v_fp_c=sum(d$csf_status==0 & d$ptau217_ab42_spec90==1)
+    v_tn_c=sum(d$csf_status==0 & d$ptau217_ab42_spec90==0)
+    v_fn_c=sum(d$csf_status==1 & d$ptau217_ab42_spec90==0)
+    acc_ptau217ab42=(v_tp_c+v_tn_c)/(v_tp_c+v_tn_c+v_fn_c+v_fp_c)
+    PPV_ptau217ab42=ppv(tp = v_tp_c,fp = v_fp_c,
+                 tn = v_tn_c,fn = v_fn_c)
+    NPV_ptau217ab42=npv(tp = v_tp_c,fp = v_fp_c,
+                 tn = v_tn_c,fn = v_fn_c)
+  
+    acclumi_ptau217ab42 <- acc_lumi - acc_ptau217ab42
+    ppvlumi_ptau217ab42 <- PPV_lumi - PPV_ptau217ab42
+    npvlumi_ptau217ab42 <- NPV_lumi - NPV_ptau217ab42
+    
+    return(c(acc_lumi,PPV_lumi, NPV_lumi, acc_ptau217ab42, PPV_ptau217ab42,NPV_ptau217ab42,#6
+             acclumi_ptau217ab42, ppvlumi_ptau217ab42, npvlumi_ptau217ab42))
+  }
+  set.seed(12345)
+  boot_results <- boot(data = lumi, statistic = f_comp_stats, R = 2000)
+  
+  ##pvalues 1cp
+  stat_indices <- list(
+    "Accuracy pval Lumi vs. Lumi" = 7,
+    "PPV pval Lumi vs. Lumi" = 8,
+    "NPV pval Lumi vs. Lumi" = 9)
+  
+  pvals_1cp <- data.frame(
+    Grey = numeric(length(stat_indices)),
+    row.names = c("Accuracy pval Lumi vs. Lumi", "PPV pval Lumi vs. Lumi", "NPV pval Lumi vs. Lumi"))
+  
+  bootstrap_replicates <- boot_results$t
+  for (stat_name in names(stat_indices)) {
+    index <- stat_indices[[stat_name]]
+    boot_diff <- boot_results$t0[index]
+    results_underH0_diff <- bootstrap_replicates[, index] - mean(bootstrap_replicates[, index])
+    p_value <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+    pvals_1cp[paste0(stat_name), "Grey"] <- round(p_value, 3)
+  }
+  
+  ##Add results to dataframe, will be used for plotting ----
+  results_1cp_ptau217 <- data.frame(
+  method = "P-tau217",
+    auc1 = round(results_delong$auc1a,3),
+    auc_ci_lower1 = round(quantile(results_delong$auc1_ci_low, c(0.025, 0.975))[1],3),
+    auc_ci_upper1 = round(quantile(results_delong$auc1_ci_high, c(0.025, 0.975))[2],3),
+    accuracy1 = round(boot_results$t0[1], 3),
+    acc_ci_lower1 = round(quantile(boot_results$t[,1], c(0.025, 0.975))[1],3),
+    acc_ci_upper1 = round(quantile(boot_results$t[,1], c(0.025, 0.975))[2],3),
+    PPV1 = round(boot_results$t0[2], 3),
+    ppv_ci_lower1 = round(quantile(boot_results$t[,2], c(0.025, 0.975))[1],3),
+    ppv_ci_upper1 = round(quantile(boot_results$t[,2], c(0.025, 0.975))[2],3),
+    NPV1 = round(boot_results$t0[3], 3),
+    npv_ci_lower1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[1],3),
+    npv_ci_upper1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[2],3),
+    intermediate_n1 = NA,
+    intermediate_cilow1 = NA,
+    intermediate_cihigh1 = NA,
+    intermediate_n_percentage1= NA,
+    intermediate_n_percentage_low1= NA,
+    intermediate_n_percentage_high1=  NA,
+    stringsAsFactors = FALSE,
+    row.names = "1 Cutpoint")
+  
+  results_1cp_ptau217ab42 <- data.frame(
+    method = "P-tau217/AB42",
+    auc1 = round(results_delong$auc2a,3),
+    auc_ci_lower1 = round(quantile(results_delong$auc2_ci_low, c(0.025, 0.975))[1],3),
+    auc_ci_upper1 = round(quantile(results_delong$auc2_ci_high, c(0.025, 0.975))[2],3),
+    accuracy1 = round(boot_results$t0[4], 3),
+    acc_ci_lower1 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[1],3),
+    acc_ci_upper1 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[2],3),
+    PPV1 = round(boot_results$t0[5], 3),
+    ppv_ci_lower1 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[1],3),
+    ppv_ci_upper1 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[2],3),
+    NPV1 = round(boot_results$t0[6], 3),
+    npv_ci_lower1 = round(quantile(boot_results$t[,6], c(0.025, 0.975))[1],3),
+    npv_ci_upper1 = round(quantile(boot_results$t[,6], c(0.025, 0.975))[2],3),
+    intermediate_n1 = NA,
+    intermediate_cilow1 = NA,
+    intermediate_cihigh1 = NA,
+    intermediate_n_percentage1= NA,
+    intermediate_n_percentage_low1= NA,
+    intermediate_n_percentage_high1=  NA,
+    stringsAsFactors = FALSE,
+    row.names = "1 Cutpoint")
+  
+  merged_results_1cp <- rbind(results_1cp_ptau217, results_1cp_ptau217ab42)
+  
+  #Greyzone
+  
+  lumi <- lumi %>%
+    mutate(greyzone_lumi = case_when(
+      ptau217_sens95_lumi == 0 ~ 1,  # sens95 equals 0
+      ptau217_spec95_lumi == 1 ~ 3,  # spec95 equals 1
+      TRUE ~ 2                     # Intermediate values
+    ))
+ table(lumi$greyzone_lumi)
+
+  lumi <- lumi %>%
+    mutate(greyzone_ptau217ab42 = case_when(
+      ptau217_ab42_sens95 == 0 ~ 1,  # sens95 equals 0
+      ptau217_ab42_spec95 == 1 ~ 3,  # spec95 equals 1
+      TRUE ~ 2                      # Intermediate values
+    ))
+ table(lumi$greyzone_ptau217ab42)
+ 
+  f_greyzone <- function(data, indices, roc_curve){
+   d <- data[indices, ]
+    
+    #ptau217
+    d_lumi <- d %>%
+      mutate(greyzone_lumi = case_when(
+        ptau217_sens95_lumi == 0 ~ 1,  # sens95 equals 0
+        ptau217_spec95_lumi == 1 ~ 3,  # spec95 equals 1
+        TRUE ~ 2                     # Intermediate values
+      ))
+    
+    intermediate_n_lumi <- length(which(d_lumi$greyzone_lumi ==2))
+    intermediate_npercent_lumi <- round((length(which(d_lumi$greyzone_lumi == 2)) / nrow(d_lumi)) * 100, 3)
+    
+    #ptau217/ab42
+    d_ptau217ab42 <- d %>%
+      mutate(greyzone_ptau217ab42 = case_when(
+        ptau217_ab42_sens95 == 0 ~ 1,  # sens95 equals 0
+        ptau217_ab42_spec95 == 1 ~ 3,  # spec95 equals 1
+        TRUE ~ 2                     # Intermediate values
+      ))
+    
+    intermediate_n_ptau217ab42 <- length(which(d_ptau217ab42$greyzone_ptau217ab42 ==2))
+    intermediate_npercent_ptau217ab42 <- round((length(which(d_ptau217ab42$greyzone_ptau217ab42 == 2)) / nrow(d_ptau217ab42)) * 100, 3)
+    
+    #DIFFERENCES BETWEEN ASSAYS
+    diff_nperc_ptau217_ptau217ab42 <- intermediate_npercent_lumi - intermediate_npercent_ptau217ab42
+    
+    return(c(intermediate_npercent_lumi, intermediate_n_lumi,intermediate_npercent_ptau217ab42,
+             intermediate_n_ptau217ab42, diff_nperc_ptau217_ptau217ab42))
+  }
+  
+  set.seed(12345)
+  boot_results_greyzone <- boot(data = lumi, statistic = f_greyzone, R = 2000)
+  bootstrap_replicates_grey <- boot_results_greyzone$t
+  boot_diff <- boot_results_greyzone$t0[5]
+  results_underH0_diff <- bootstrap_replicates_grey[, 5] - mean(bootstrap_replicates_grey[, 5])
+  p_value_grey <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+  
+  #Two cutpoints
+  
+  f_comp_stats_2cp <- function(data, indices) {
+    d <- as.data.frame(data[indices,])
+    
+    d_lumi <- d %>% filter(greyzone_lumi != 2)
+    
+    #ptau217
+    #Create confusion matrix1
+    v_tp=sum(d_lumi$csf_status==1 & d_lumi$ptau217_spec90_lumi==1)
+    v_fp=sum(d_lumi$csf_status==0 & d_lumi$ptau217_spec90_lumi==1)
+    v_tn=sum(d_lumi$csf_status==0 & d_lumi$ptau217_spec90_lumi==0)
+    v_fn=sum(d_lumi$csf_status==1 & d_lumi$ptau217_spec90_lumi==0)
+    
+    #Accuracy1
+    acc=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+    
+    #Calculate PPV and NPV (cutpointr)1
+    PPV=ppv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    
+    NPV=npv(tp = v_tp,fp = v_fp,
+            tn = v_tn,fn = v_fn)
+    
+    #ptau217ab42
+    
+    d_c2n  <- d %>% filter(greyzone_ptau217ab42 != 2)
+  
+    #Create confusion matrix1
+    c2nv_tp=sum(d_c2n$csf_status==1 & d_c2n$ptau217_ab42_spec90==1)
+    c2nv_fp=sum(d_c2n$csf_status==0 & d_c2n$ptau217_ab42_spec90==1)
+    c2nv_tn=sum(d_c2n$csf_status==0 & d_c2n$ptau217_ab42_spec90==0)
+    c2nv_fn=sum(d_c2n$csf_status==1 & d_c2n$ptau217_ab42_spec90==0)
+    
+    #Accuracy1
+    acc_ptau217ab42=(c2nv_tp+c2nv_tn)/(c2nv_tp+c2nv_tn+c2nv_fn+c2nv_fp)
+    
+    #Calculate PPV and NPV (cutpointr)1
+    PPV_ptau217ab42=ppv(tp = c2nv_tp,fp = c2nv_fp,
+            tn = c2nv_tn,fn = c2nv_fn)
+    
+    NPV_ptau217ab42=npv(tp = c2nv_tp,fp = c2nv_fp,
+            tn = c2nv_tn,fn = c2nv_fn)
+    
+    
+    ##Different comparisons
+    
+    ##lumi vs. ptau217ab42
+    diff_acc <- acc - acc_ptau217ab42
+    diff_ppv <- PPV - PPV_ptau217ab42
+    diff_npv <- NPV - NPV_ptau217ab42
+    
+    
+    return(c(acc, PPV, NPV,acc_ptau217ab42, PPV_ptau217ab42, NPV_ptau217ab42, #6
+             diff_acc, diff_ppv, diff_npv))
+  }
+  
+  set.seed(12345)
+  boot_results_twocutpoints <- boot(data = lumi, statistic = f_comp_stats_2cp, R = 2000)
+  
+  results_2cp_lumi <- data.frame(
+    method = "P-tau217",
+    auc1 = NA,
+    auc_ci_lower1 = NA,
+    auc_ci_upper1 = NA,
+    accuracy1 = round(boot_results_twocutpoints$t0[1], 3),
+    acc_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975))[1],3),
+    acc_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975))[2],3),
+    PPV1 = round(boot_results_twocutpoints$t0[2], 3),
+    ppv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975))[1],3),
+    ppv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975))[2],3),
+    NPV1 = round(boot_results_twocutpoints$t0[3], 3),
+    npv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[1],3),
+    npv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[2],3),
+    intermediate_n1 = round(boot_results_greyzone$t0[2],3),
+    intermediate_cilow1 = round(quantile(boot_results_greyzone$t[,2], c(0.025, 0.975))[1],3),
+    intermediate_cihigh1 = round(quantile(boot_results_greyzone$t[,2], c(0.025, 0.975))[2],3),
+    intermediate_n_percentage1= round(boot_results_greyzone$t0[1],3),
+    intermediate_n_percentage_low1= round(quantile(boot_results_greyzone$t[,1], c(0.025, 0.975))[1],3),
+    intermediate_n_percentage_high1=  round(quantile(boot_results_greyzone$t[,1], c(0.025, 0.975))[2],3),
+    stringsAsFactors = FALSE,
+    row.names = "2 Cutpoints")
+  
+  
+  ###Add results 2cp ptau217/ab42----
+  results_2cp_ptau217ab42 <- data.frame(
+    method = "P-tau217/AB42",
+    auc1 = NA,
+    auc_ci_lower1 = NA,
+    auc_ci_upper1 = NA,
+    accuracy1 = round(boot_results_twocutpoints$t0[4], 3),
+    acc_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975), na.rm=T)[1],3),
+    acc_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975), na.rm=T)[2],3),
+    PPV1 = round(boot_results_twocutpoints$t0[5], 3),
+    ppv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975), na.rm=T)[1],3),
+    ppv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975), na.rm=T)[2],3),
+    NPV1 = round(boot_results_twocutpoints$t0[6], 3),
+    npv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,6], c(0.025, 0.975), na.rm=T)[1],3),
+    npv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,6], c(0.025, 0.975), na.rm=T)[2],3),
+    intermediate_n1 = round(boot_results_greyzone$t0[4],3),
+    intermediate_cilow1 = round(quantile(boot_results_greyzone$t[,4], c(0.025, 0.975))[1],3),
+    intermediate_cihigh1 = round(quantile(boot_results_greyzone$t[,4], c(0.025, 0.975))[2],3),
+    intermediate_n_percentage1= round(boot_results_greyzone$t0[3],3),
+    intermediate_n_percentage_low1= round(quantile(boot_results_greyzone$t[,3], c(0.025, 0.975))[1],3),
+    intermediate_n_percentage_high1=  round(quantile(boot_results_greyzone$t[,3], c(0.025, 0.975))[2],3),
+    stringsAsFactors = FALSE,
+    row.names = "2 Cutpoints")
+  
+  merged_results_2cp <- rbind(results_2cp_lumi, results_2cp_ptau217ab42)
+  
+  
+  stat_indices <- list(
+    "Accuracy pval Lumi vs. ptau217ab42" = 7,
+    "PPV pval Lumi vs. ptau217ab42" = 8,
+    "NPV pval Lumi vs. ptau217ab42" = 9)
+  
+  pvals_2cp <- data.frame(
+    Grey = numeric(length(stat_indices)),
+    row.names = c("Accuracy pval Lumi vs. ptau217ab42", "PPV pval Lumi vs. ptau217ab42", "NPV pval Lumi vs. ptau217ab42"))
+  
+  bootstrap_replicates_2cp <- boot_results_twocutpoints$t
+  
+  for (stat_name in names(stat_indices)) {
+    index <- stat_indices[[stat_name]]
+    boot_diff <- boot_results_twocutpoints$t0[index]
+    results_underH0_diff <- bootstrap_replicates_2cp[, index] - mean(bootstrap_replicates_2cp[, index])
+    p_value2 <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+    pvals_2cp[paste0(stat_name), "Grey"] <- round(p_value2, 3)
+  }
+  
+  merged_comps_lumi <- rbind(merged_results_1cp, merged_results_2cp)
+  merged_comps_lumi$Cutpoints <- c("1 Cutpoint","1 Cutpoint","2 Cutpoints","2 Cutpoints")
+  merged_comps_lumi$Participants <- nrow(lumi)
+  
+  pvalues_lumi <- rbind(pvals_1cp,pvals_2cp)
+  pvalues_lumi$cutpoint <- c("1 Cutpoint","1 Cutpoint","1 Cutpoint","2 Cutpoints","2 Cutpoints","2 Cutpoints")
+  pvalues_lumi$intermediate <- p_value_grey
+  pvalues_lumi$auc <- results_delong$pval
+  pvalues_lumi <- pvalues_lumi %>% rownames_to_column(var = "Analysis")
+  
+return(list(merged_comps_lumi = merged_comps_lumi, pvalues_lumi = pvalues_lumi))
+}
+output_directory <- "LP/"
+
+
+for (i in seq_along(datasets)) {
+  lumi <- datasets[[i]]
+  name <- dataset_names[i]
+  results <- run_analysis(lumi, name)
+  openxlsx::write.xlsx(results$merged_comps_lumi, file=paste0(output_directory, "LP2_pooled_", name, ".xlsx"))
+  openxlsx::write.xlsx(results$pvalues_lumi, file=paste0(output_directory, "LP2pvals_pooled_", name, ".xlsx"))
+}
+
+```
+
+
+##Figures pooled
+
+```{r Figures 1cp, echo=F}
+library(readxl)
+df1 <- read_xlsx("LP2_pooled_pooled.xlsx") #change for results Gothenburg etc .
+names(df1)[1] <- "Approach"
+df1$cohort <- "Pooled"
+df5 <-  read_xlsx("LP2_pooled_BFPC.xlsx")
+names(df5)[1] <- "Approach"
+df5$cohort <- "Primary care"
+
+#1CP
+merged_results <- rbind(df1, df5)
+merged_results <- merged_results %>% filter(Cutpoints == "1 Cutpoint")
+merged_results_ptau217 <- merged_results %>% filter(Approach == "P-tau217")
+merged_results_ptau217ab42 <- merged_results %>% filter(Approach == "P-tau217/AB42")
+
+plotdata <- cbind(merged_results_ptau217,merged_results_ptau217ab42)
+
+plot_acc1 <- cbind(plotdata[0:2, 5:7])
+plot_acc1$group <- c("1", "1")
+colnames(plot_acc1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc2 <- cbind(plotdata[0:2, 27:29])
+plot_acc2$group <- c("2", "2")
+colnames(plot_acc2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc <- rbind(plot_acc1, plot_acc2)
+plot_acc$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+plot_ppv1 <- cbind(plotdata[0:2, 8:10])
+plot_ppv1$group <- c("1", "1")
+colnames(plot_ppv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv2 <- cbind(plotdata[0:2, 30:32])
+plot_ppv2$group <- c("2", "2")
+colnames(plot_ppv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv <- rbind(plot_ppv1, plot_ppv2)
+plot_ppv$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+plot_npv1 <- cbind(plotdata[0:2, 11:13])
+plot_npv1$group <- c("1", "1")
+colnames(plot_npv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv2 <- cbind(plotdata[0:2, 33:35])
+plot_npv2$group <- c("2", "2")
+colnames(plot_npv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv <- rbind(plot_npv1, plot_npv2)
+plot_npv$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+plot_auc1 <- cbind(plotdata[0:2, 2:4])
+plot_auc1$group <- c("1", "1")
+colnames(plot_auc1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_auc2 <- cbind(plotdata[0:2,24:26])
+plot_auc2$group <- c("2", "2")
+colnames(plot_auc2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_auc <- rbind(plot_auc1, plot_auc2)
+plot_auc$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+tick_positions <- seq(60, 100, by = 10)
+group_order <- c("2", "1")
+
+#Accuracy plot----
+ggplot(data=plot_acc, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_acc$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "Accuracy (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_Acc_1cutpoint_pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+
+#PPV plot----
+ggplot(data=plot_ppv, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_ppv$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "PPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_PPV_1cutpoint_Pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+
+#NPV plot---- 
+ggplot(data=plot_npv,aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_npv$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "NPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_NPV_1cutpoint_Pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+#AUC plot---- 
+tick_positions <- seq(.60, 1.00, by = 1.0)
+
+ggplot(data=plot_auc, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_auc$Measure1[1]), color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low , xmax = ci_high ),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(.9,1.2),breaks = seq(.9,1.20, by=0.05),expand =c(0,0)) +
+  labs(x = "AUC", y = "") +
+  geom_text(aes(label = sprintf("%.2f (%.2f-%.2f)", Measure1, ci_low, ci_high), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=.96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+
+ggsave("LP_AUC_1cutpoint_Pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+```
+
+```{r Figures 2cp, echo=F}
+merged_results <- rbind(df1, df5)
+merged_results <- merged_results %>% filter(Cutpoints == "2 Cutpoints")
+merged_results_ptau217 <- merged_results %>% filter(Approach == "P-tau217")
+merged_results_ptau217ab42 <- merged_results %>% filter(Approach == "P-tau217/AB42")
+
+plotdata <- cbind(merged_results_ptau217,merged_results_ptau217ab42)
+
+plot_acc1 <- cbind(plotdata[0:2, 5:7])
+plot_acc1$group <- c("1", "1")
+colnames(plot_acc1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc2 <- cbind(plotdata[0:2, 27:29])
+plot_acc2$group <- c("2", "2")
+colnames(plot_acc2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_acc <- rbind(plot_acc1, plot_acc2)
+plot_acc$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+plot_ppv1 <- cbind(plotdata[0:2, 8:10])
+plot_ppv1$group <- c("1", "1")
+colnames(plot_ppv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv2 <- cbind(plotdata[0:2, 30:32])
+plot_ppv2$group <- c("2", "2")
+colnames(plot_ppv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_ppv <- rbind(plot_ppv1, plot_ppv2)
+plot_ppv$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+plot_npv1 <- cbind(plotdata[0:2, 11:13])
+plot_npv1$group <- c("1", "1")
+colnames(plot_npv1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv2 <- cbind(plotdata[0:2, 33:35])
+plot_npv2$group <- c("2", "2")
+colnames(plot_npv2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_npv <- rbind(plot_npv1, plot_npv2)
+plot_npv$cohort <- c("Pooled", "Primary care","Pooled","Primary care")
+
+tick_positions <- seq(60, 100, by = 10)
+group_order <- c("2", "1")
+
+#Accuracy plot----
+ggplot(data=plot_acc, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_acc$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "Accuracy (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  #scale_shape_manual(values = c("2"=21, "1"=22), labels=c("APS2", "P-tau217/AB42")) +
+    scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_Acc_2cutpoint_pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+
+#PPV plot----
+ggplot(data=plot_ppv, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_ppv$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "PPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+    scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_PPV_2cutpoint_pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+
+#NPV plot---- 
+ggplot(data=plot_npv, aes(y=factor(cohort, levels = c("Primary care", "Pooled")),
+                          x=Measure1*100, fill = factor(cohort, levels = c("Primary care", "Pooled")), 
+                          color=factor(cohort, levels = c("Primary care", "Pooled")),
+                          shape=factor(group, levels=group_order))) +
+  geom_vline(xintercept = (plot_npv$Measure1[1])*100, color = "#3c5488ff", linetype = "dotted", alpha=0.5)+
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.25, linewidth = 0.5, position = position_dodge(width = 0.5)) +
+  geom_point(position = position_dodge(width = 0.5), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,120),breaks = seq(70,120, by=10),expand =c(0,0)) +
+  labs(x = "NPV (%)", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), 
+                group=interaction(cohort,factor(group, levels=group_order)), x=96), 
+            position = position_dodge(width = 0.5), hjust = -0.3, size = 4) +
+  scale_color_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+  scale_fill_manual(values=c("#79AF97FF", "#3c5488ff"), guide="none") +
+    scale_shape_manual(values = c("1"=21, "2"=22), guide="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank())
+
+ggsave("LP_NPV_2cutpoint_pooled.pdf",device = "pdf",width = 90, dpi=500, height = 70, units = "mm")
+
+##Intermediates----
+plot_grey1 <- cbind(plotdata[0:2, 17:19])
+plot_grey1$group <- c("1", "1")
+colnames(plot_grey1) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_grey2 <- cbind(plotdata[0:2, 39:41])
+plot_grey2$group <- c("2", "2")
+colnames(plot_grey2) <- c("Measure1", "ci_low", "ci_high", "group")
+plot_grey <- rbind(plot_grey1, plot_grey2)
+plot_grey$cohort <- c("Pooled", "BF-PC")
+
+desired_order <- c("Pooled","BF-PC")
+group_order <- c("1", "2")
+group_colors <- c("#79AF97FF", "#3c5488ff")
+
+library(ggpattern)
+ggplot(data = plot_grey, aes(x = factor(cohort, levels = desired_order),  y = Measure1, fill = factor(cohort, levels = desired_order), 
+                             pattern = factor(group, levels = group_order))) +
+  geom_bar_pattern(stat = "identity",position = position_dodge(width = 0.7), color = "black", 
+                   width = 0.7, pattern_fill = "white",
+                   pattern_color = "white", pattern_density = 0.45,
+                   size = 0.4) +
+  geom_errorbar(aes(ymax = ci_high, ymin = ci_low),position = position_dodge(width = 0.7), 
+                width = 0.2, size = 0.5, color = "black") +
+  geom_text(aes(label = sprintf("%.f", Measure1)), position = position_dodge(width = 0.7), 
+            vjust = -4, size = 4) +
+  scale_fill_manual(values=c("#3c5488ff", "#79AF97FF"), guide="none") +
+  scale_y_continuous(limits = c(0, 25), breaks = seq(0, 25, by = 5),  expand = c(0, 0)) +
+  scale_pattern_manual(values = c("none", "stripe"), 
+                       labels = c("P-tau217", "P-tau217/AB42")) +
+  labs(title = element_blank(), 
+       x = "", 
+       y = "Intermediate values (%)") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 8),
+    axis.title.x = element_text(face = "bold", size = 10),
+    panel.border = element_rect(linewidth = 0.5, fill = NA, color = NA),
+    legend.title = element_blank()
+  )
+
+ggsave("LP_Intermediates_pooled.pdf",device = "pdf",width = 100, dpi=500, height = 70, units = "mm")
+
+```
+
+#Comorbidity plots p-tau217 AB42
+##P-tau217/AB42 SET CUTOFFS AND SCALE CORRECTLY
+
+```{r setup ptau217ab42 data, echo=FALSE}
+library(boot)
+library(cutpointr) #Used for PPV and NPV
+library(pROC)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(ggpubr)
+
+BFPC <- read.xlsx("BFPC_data_LP.xlsx") 
+BFMC <- read.xlsx("BFMC_data_LP.xlsx") 
+Bres <- read.xlsx("Brescia_data_LP.xlsx") 
+BBRC <- read.xlsx("BBRC_data_LP.xlsx") 
+Got <- read.xlsx("Gothenburg_data_LP.xlsx")
+lumi <- rbind(BFPC, BFMC, Bres, BBRC, Got)
+
+lumi$ab42 <- as.numeric(lumi$ab42)
+lumi$ptau217_ab42 <- (lumi$pl_ptau217)/(lumi$ab42)
+lumi$ptau217_ab42[is.infinite(lumi$ptau217_ab42)] <- NA
+lumi <- lumi %>% drop_na(ptau217_ab42)
+
+lumi$ptau217_ab42_spec90 <- ifelse(lumi$ptau217_ab42 > 0.008, 1, 0) 
+outliers2 <- lumi %>% filter(ptau217_ab42 > 0.15)
+lumi <- lumi %>% filter(ptau217_ab42 < 0.15) #filter out outliers for visualization only
+lumi.df <- lumi
+
+```
+
+##Boxplots sex ptau217ab42
+```{r boxplot sex ptau217ab42, echo=F}
+lumi <- lumi.df
+lumi <- lumi %>% rename(strat = sex)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+  geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) + 
+  scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.150), breaks = seq(0, 150, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5)
+
+ggsave("Boxplot_sex_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+```
+
+##Boxplots APOE ptau217ab42
+```{r boxplot APOE ptau217ab42, echo=F}
+lumi <- lumi.df
+lumi <- lumi %>% rename(strat = apoe)
+lumi <- lumi %>% drop_na(strat)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+  geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) + 
+ scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Non-carriers", "Carriers"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Non-carriers", "Carriers"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.150), breaks = seq(0, 150, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5)
+
+
+ggsave("Boxplot_APOE_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+
+```
+
+##Boxplots Diabetes ptau217ab42
+```{r boxplot diabetes ptau217ab42, echo=F}
+lumi <- lumi.df
+lumi <- lumi %>% rename(strat = diabetes)
+lumi <- lumi %>% drop_na(strat)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +  scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.15), breaks = seq(0, .15, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5)
+
+ggsave("Boxplot_diabetes_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+
+```
+
+##Boxplots CKD ptau217ab42
+```{r boxplot CKD ptau217ab42, echo=F}
+lumi <- lumi.df
+lumi <- lumi %>% rename(strat = CKD)
+lumi <- lumi %>% drop_na(strat)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.150), breaks = seq(0, 150, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5)
+
+
+ggsave("Boxplot_CKD_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+
+```
+
+##Boxplots Education ptau217ab42
+```{r boxplot education ptau217ab42, echo=F}
+lumi <- lumi.df
+lumi$education <- as.numeric(lumi$education)
+lumi$education_median <- ifelse(lumi$education < median(lumi$education, na.rm = TRUE), 0, 1)
+lumi <- lumi %>% rename(strat = education_median)
+lumi <- lumi %>% drop_na(strat)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.150), breaks = seq(0, 150, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5)
+
+ggsave("Boxplot_Education_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+
+```
+
+##Boxplots Age ptau217ab42
+```{r boxplot age ptau217ab42, echo=F}
+library(ggsignif)
+lumi <- lumi.df
+lumi$age_category <- ifelse(lumi$age >= 80, 2, ifelse(lumi$age < median(lumi$age[lumi$age < 80], na.rm = TRUE), 0, 1)) #73
+lumi <- lumi %>% rename(strat = age_category)
+lumi.1 <- lumi %>% filter(strat ==0)
+lumi.2 <- lumi %>% filter(strat == 1)
+lumi.3 <- lumi %>% filter(strat == 2)
+
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+stat_test <- compare_means(ptau217_ab42 ~ strat,  data = lumi, group.by = "csf_status", method="t.test")
+
+my_comparisons <- list( c("2", "1"), c("2", "0"), c("1", "0"))
+my_comparisons <- list( c("<73", "73-80"), c("<73", "> 80"), c("73-80", "> 80"))
+
+stat_test$p.adj <- round(stat_test$p.adj,3)
+stat_test$p <- round(stat_test$p,3)
+lumi$group <- interaction(lumi$csf_status, lumi$strat)
+
+ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = group)) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +   scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), labels = c("<73", "73-80", "> 80"), name="Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), guide = "none", labels = c("<73", "73-80", "> 80")) +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 0.150), breaks = seq(0, 150, by = 0.05)) +
+  geom_hline(yintercept = 0.00756, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217/AB42 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(label = "p.signif", method = "t.test")
+
+ggsave("Boxplot_age_ptau171ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+stat_test
+```
+
+
+
+

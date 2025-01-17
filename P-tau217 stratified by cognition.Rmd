@@ -1,0 +1,630 @@
+---
+title: "Lumipulse cognitive stage"
+author: "Noelle"
+date: "2024-07-19"
+output: html_document
+---
+This document contains code used for the stratified analyses for different cognitive groups.  
+
+```{r setup, include=FALSE}
+library(boot)
+library(cutpointr) #Used for PPV and NPV
+library(pROC)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+
+lumi <- read.xlsx("POOLED_data_cognition.xlsx") ##or
+
+lumi$ptau217_spec90 <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
+lumi$ptau217_spec95 <- ifelse(lumi$pl_ptau217 > 0.34, 1, 0)
+lumi$ptau217_sens95 <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0)
+
+lumi <- lumi %>% drop_na(cognitive_status) #n = 1766
+lumi <- lumi %>%
+  mutate(cognitive_status = recode(cognitive_status,
+                                    "1" = "SCD",
+                                    "2" = "MCI",
+                                    "3" = "Dementia"))
+lumi$cognitive_status <- as.factor(as.character(lumi$cognitive_status))
+lumi.df <- lumi
+```
+
+
+##Analyses
+
+```{r run analyses, echo=F}
+cognition <- c("SCD", "MCI", "Dementia")
+results_delong <- list()
+index <- 1
+
+for (i in seq_along(cognition)){
+  for (j in seq_along(cognition)){ 
+    if (i < j) {
+      predictor1 <- cognition[i]
+      predictor2 <- cognition[j]
+      
+      data1 <- lumi[lumi$cognitive_status == predictor1, ]
+      data2 <- lumi[lumi$cognitive_status == predictor2, ]      
+      
+      formula1a <- as.formula(paste("csf_status~pl_ptau217", collapse=""))
+      formula2a <- as.formula(paste("csf_status~pl_ptau217", collapse=""))
+      
+      roc_curve1 <- pROC::roc(formula1a, data=data1, quiet=T)
+      roc_curve2 <- pROC::roc(formula2a, data=data2,quiet=T)
+      
+      res1 <- roc.test(roc_curve1, roc_curve2, method = "delong")
+      
+      long <- data.frame(
+        comp = paste(predictor1, predictor2, sep=" vs. "),
+        auc1a = round(roc_curve1$auc,3),
+        auc2a = round(roc_curve2$auc,3),
+        pval = round(res1$p.value,3),
+        auc1_ci_low = round(ci.auc(roc_curve1)[1],3),
+        auc1_ci_high =round(ci.auc(roc_curve1)[3],3),
+        auc2_ci_low =round(ci.auc(roc_curve2)[1],3),
+        auc2_ci_high = round(ci.auc(roc_curve2)[3],3)
+        )
+      
+      results_delong[[length(results_delong) + 1]] <- long
+      index <- index + 1
+    }
+  }
+}
+results_delong <- do.call(rbind.data.frame, results_delong)
+#results_delong$padj <- round(p.adjust(results_delong$pval, method = "fdr"),3)
+openxlsx::write.xlsx(results_delong,
+                     file="DeLong_Cognition.xlsx")
+
+
+##Calculate Accuracy, PPV, NPV and 95% CIs ----
+
+f_comp_stats <- function(data, indices) {
+  d <- as.data.frame(data[indices,])
+  
+  d1 <- d %>% filter(cognitive_status == "SCD")
+  d2 <- d %>% filter(cognitive_status == "MCI")
+  d3 <- d %>% filter(cognitive_status == "Dementia")
+  
+  #LUMI
+  #Create confusion matrix1
+  v_tp=sum(d1$csf_status==1 & d1$ptau217_spec90==1)
+  v_fp=sum(d1$csf_status==0 & d1$ptau217_spec90==1)
+  v_tn=sum(d1$csf_status==0 & d1$ptau217_spec90==0)
+  v_fn=sum(d1$csf_status==1 & d1$ptau217_spec90==0)
+  
+  #Sensitivity and specificity1
+  sens <- v_tp / (v_tp + v_fn)
+  spec <- v_tn / (v_tn + v_fp)
+  
+  #Accuracy1
+  acc=(v_tp+v_tn)/(v_tp+v_tn+v_fn+v_fp)
+  
+  #Calculate PPV and NPV (cutpointr)1
+  PPV=ppv(tp = v_tp,fp = v_fp,
+          tn = v_tn,fn = v_fn)
+  
+  NPV=npv(tp = v_tp,fp = v_fp,
+          tn = v_tn,fn = v_fn)
+  
+  #Create confusion matrix MCI
+  v_tp2=sum(d2$csf_status==1 & d2$ptau217_spec90==1)
+  v_fp2=sum(d2$csf_status==0 & d2$ptau217_spec90==1)
+  v_tn2=sum(d2$csf_status==0 & d2$ptau217_spec90==0)
+  v_fn2=sum(d2$csf_status==1 & d2$ptau217_spec90==0)
+  
+  #Sensitivity and specificity2
+  sens2 <- v_tp2 / (v_tp2 + v_fn2)
+  spec2 <- v_tn2 / (v_tn2 + v_fp2)
+  
+  #Accuracy2
+  acc2=(v_tp2+v_tn2)/(v_tp2+v_tn2+v_fn2+v_fp2)
+  
+  #Calculate PPV and NPV (cutpointr)2
+  PPV2=ppv(tp = v_tp2,fp = v_fp2,
+          tn = v_tn2,fn = v_fn2)
+  
+  NPV2=npv(tp = v_tp2,fp = v_fp2,
+          tn = v_tn2,fn = v_fn2)
+  
+  #Create confusion matrix Dementia
+  v_tp3=sum(d3$csf_status==1 & d3$ptau217_spec90==1)
+  v_fp3=sum(d3$csf_status==0 & d3$ptau217_spec90==1)
+  v_tn3=sum(d3$csf_status==0 & d3$ptau217_spec90==0)
+  v_fn3=sum(d3$csf_status==1 & d3$ptau217_spec90==0)
+  
+  #Sensitivity and specificity2
+  sens3 <- v_tp3 / (v_tp3 + v_fn3)
+  spec3 <- v_tn3 / (v_tn3 + v_fp3)
+  
+  #Accuracy2
+  acc3=(v_tp3+v_tn3)/(v_tp3+v_tn3+v_fn3+v_fp3)
+  
+  #Calculate PPV and NPV (cutpointr)2
+  PPV3=ppv(tp = v_tp3,fp = v_fp3,
+          tn = v_tn3,fn = v_fn3)
+  
+  NPV3=npv(tp = v_tp3,fp = v_fp3,
+          tn = v_tn3,fn = v_fn3)
+  
+  ##Different comparisons
+  
+  ##SCD vs. MCI
+  diff_acc_scd_mci <- acc - acc2
+  diff_ppv_scd_mci <- PPV - PPV2
+  diff_npv_scd_mci <- NPV - NPV2
+
+  ##SCD vs. Dem
+  diff_acc_scd_dem <- acc - acc3
+  diff_ppv_scd_dem <- PPV - PPV3
+  diff_npv_scd_dem <- NPV - NPV3
+  
+   ##MCI vs. Dem
+  diff_acc_mci_dem <- acc2 - acc3
+  diff_ppv_mci_dem <- PPV2 - PPV3
+  diff_npv_mci_dem <- NPV2 - NPV3
+  
+  
+  return(c(acc, PPV, NPV, acc2, PPV2, NPV2, acc3, PPV3, NPV3, diff_acc_scd_mci,diff_ppv_scd_mci, diff_npv_scd_mci, diff_acc_scd_dem,
+           diff_ppv_scd_dem,diff_npv_scd_dem,diff_acc_mci_dem,diff_ppv_mci_dem,diff_npv_mci_dem))
+}
+
+set.seed(12345)
+boot_results <- boot(data = lumi, statistic = f_comp_stats, R = 2000)
+
+stat_indices <- list(
+  "SCD vs. MCI Accuracy" = 10,"SCD vs. MCI PPV" = 11,"SCD vs. MCI NPV" = 12,
+  "SCD vs. Dem Accuracy" = 13,"SCD vs. Dem PPV" = 14,"SCD vs. Dem NPV" = 15,
+  "MCI vs. Dem Accuracy" = 16,"MCI vs. Dem PPV" = 17,"MCI vs. Dem NPV" = 18)
+  
+pvals_cog <- data.frame(
+  Cog = numeric(length(stat_indices)),
+  row.names = c( "SCD vs. MCI Accuracy","SCD vs. MCI PPV","SCD vs. MCI NPV",
+  "SCD vs. Dem Accuracy","SCD vs. Dem PPV","SCD vs. Dem NPV",
+  "MCI vs. Dem Accuracy","MCI vs. Dem PPV","MCI vs. Dem NPV"))
+
+bootstrap_replicates <- boot_results$t
+
+for (stat_name in names(stat_indices)) {
+  index <- stat_indices[[stat_name]]
+  boot_diff <- boot_results$t0[index]
+  results_underH0_diff <- bootstrap_replicates[, index] - mean(bootstrap_replicates[, index])
+  p_value <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+  pvals_cog[paste0(stat_name), "Cog"] <- round(p_value, 3)
+}
+
+results_1cp <- data.frame(
+  Cutpoint = "1 Cutpoint",
+  auc1 = round(results_delong$auc1a[1],3),
+  auc_ci_lower1 = round(results_delong$auc1_ci_low[1],3),
+  auc_ci_upper1 = round(results_delong$auc1_ci_high[1],3),
+  accuracy1 = round(boot_results$t0[1], 3),
+  acc_ci_lower1 = round(quantile(boot_results$t[,1], c(0.025, 0.975))[1],3),
+  acc_ci_upper1 = round(quantile(boot_results$t[,1], c(0.025, 0.975))[2],3),
+  PPV1 = round(boot_results$t0[2], 3),
+  ppv_ci_lower1 = round(quantile(boot_results$t[,2], c(0.025, 0.975))[1],3),
+  ppv_ci_upper1 = round(quantile(boot_results$t[,2], c(0.025, 0.975))[2],3),
+  NPV1 = round(boot_results$t0[3], 3),
+  npv_ci_lower1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[1],3),
+  npv_ci_upper1 = round(quantile(boot_results$t[,3], c(0.025, 0.975))[2],3),
+  
+  auc2 = round(results_delong$auc1a[3],3),
+  auc_ci_lower2 = round(results_delong$auc1_ci_low[3],3),
+  auc_ci_upper2 = round(results_delong$auc1_ci_high[3],3),
+  accuracy2 = round(boot_results$t0[4], 3),
+  acc_ci_lower2 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[1],3),
+  acc_ci_upper2 = round(quantile(boot_results$t[,4], c(0.025, 0.975))[2],3),
+  PPV2 = round(boot_results$t0[5], 3),
+  ppv_ci_lower2 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[1],3),
+  ppv_ci_upper2 = round(quantile(boot_results$t[,5], c(0.025, 0.975))[2],3),
+  NPV2 = round(boot_results$t0[6], 3),
+  npv_ci_lower2 = round(quantile(boot_results$t[,6], c(0.025, 0.975))[1],3),
+  npv_ci_upper2 = round(quantile(boot_results$t[,6], c(0.025, 0.975))[2],3),
+  
+  auc3 = round(results_delong$auc2a[3],3),
+  auc_ci_lower3 = round(results_delong$auc2_ci_low[3],3),
+  auc_ci_upper3 = round(results_delong$auc2_ci_high[3],3),
+  accuracy3 = round(boot_results$t0[7], 3),
+  acc_ci_lower3 = round(quantile(boot_results$t[,7], c(0.025, 0.975))[1],3),
+  acc_ci_upper3 = round(quantile(boot_results$t[,7], c(0.025, 0.975))[2],3),
+  PPV3 = round(boot_results$t0[8], 3),
+  ppv_ci_lower3 = round(quantile(boot_results$t[,8], c(0.025, 0.975))[1],3),
+  ppv_ci_upper3 = round(quantile(boot_results$t[,8], c(0.025, 0.975))[2],3),
+  NPV3 = round(boot_results$t0[9], 3),
+  npv_ci_lower3 = round(quantile(boot_results$t[,9], c(0.025, 0.975))[1],3),
+  npv_ci_upper3 = round(quantile(boot_results$t[,9], c(0.025, 0.975))[2],3),
+  
+  intermediate_n1 = NA,
+  intermediate_cilow1 = NA,
+  intermediate_cihigh1 = NA,
+  intermediate_n_percentage1= NA,
+  intermediate_n_percentage_low1= NA,
+  intermediate_n_percentage_high1= NA,
+  
+  intermediate_n2 = NA,
+  intermediate_cilow2 = NA,
+  intermediate_cihigh2 = NA,
+  intermediate_n_percentage2= NA,
+  intermediate_n_percentage_low2= NA,
+  intermediate_n_percentage_high2= NA,
+  
+  intermediate_n3 = NA,
+  intermediate_cilow3 = NA,
+  intermediate_cihigh3 = NA,
+  intermediate_n_percentage3= NA,
+  intermediate_n_percentage_low3= NA,
+  intermediate_n_percentage_high3= NA,
+  stringsAsFactors = FALSE)
+
+
+#GREYZONE
+f_greyzone <- function(data, indices, roc_curve){
+  d <- data[indices, ]
+  
+  d <- d %>%
+  mutate(greyzone = case_when(
+    ptau217_sens95 == 0 ~ 1,  # sens95 equals 0
+    ptau217_spec95 == 1 ~ 3,  # spec95 equals 1
+    TRUE ~ 2                     # Intermediate values
+  ))
+  
+  d1 <- d %>% filter(cognitive_status == "SCD")
+  d2 <- d %>% filter(cognitive_status == "MCI")
+  d3 <- d %>% filter(cognitive_status == "Dementia")
+  
+  intermediate_n_scd <- length(which(d1$greyzone ==2))
+  intermediate_npercent_scd <- round((length(which(d1$greyzone == 2)) / nrow(d1)) * 100, 3)
+  
+  intermediate_n_mci <- length(which(d2$greyzone ==2))
+  intermediate_npercent_mci <- round((length(which(d2$greyzone == 2)) / nrow(d2)) * 100, 3)
+  
+  intermediate_n_dem <- length(which(d3$greyzone ==2))
+  intermediate_npercent_dem <- round((length(which(d3$greyzone == 2)) / nrow(d3)) * 100, 3)
+  
+  #DIFFERENCES BETWEEN ASSAYS
+  ##Scd vs. MCI
+  diff_n_scd_mci <- intermediate_n_scd - intermediate_n_mci
+  diff_nperc_scd_mci <- intermediate_npercent_scd - intermediate_npercent_mci
+
+  ##SCD vs. Dem
+  diff_n_scd_dem <- intermediate_n_scd - intermediate_n_dem
+  diff_nperc_scd_dem <- intermediate_npercent_scd - intermediate_npercent_dem
+
+  ##MCI vs. Dem
+  diff_n_mci_dem <- intermediate_n_mci - intermediate_n_dem
+  diff_nperc_mci_dem <- intermediate_npercent_mci - intermediate_npercent_dem
+
+  return(c(intermediate_n_scd, intermediate_npercent_scd, intermediate_n_mci,intermediate_npercent_mci,intermediate_n_dem,intermediate_npercent_dem,#6
+           diff_n_scd_mci, diff_nperc_scd_mci, diff_n_scd_dem,diff_nperc_scd_dem,diff_n_mci_dem,diff_nperc_mci_dem))
+}
+
+set.seed(12345)
+boot_results_greyzone <- boot(data = lumi, statistic = f_greyzone, R = 2000)
+
+stat_indices <- list(
+  "SCD vs. MCI N" = 7,"SCD vs. MCI N%" = 8,
+  "SCD vs. Dem N" = 9,"SCD vs. Dem N%" = 10,
+  "MCI vs. Dem N" = 11,"MCI vs. Dem N%" = 12)
+  
+pvals_cog_intermediate <- data.frame(
+  Cog = numeric(length(stat_indices)),
+  row.names = c( "SCD vs. MCI N","SCD vs. MCI N%",
+  "SCD vs. Dem N","SCD vs. Dem N%",
+  "MCI vs. Dem N","MCI vs. Dem N%"))
+
+bootstrap_replicates_grey <- boot_results_greyzone$t
+
+for (stat_name in names(stat_indices)) {
+  index <- stat_indices[[stat_name]]
+  boot_diff <- boot_results_greyzone$t0[index]
+  results_underH0_diff <- bootstrap_replicates_grey[, index] - mean(bootstrap_replicates_grey[, index])
+  p_value <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+  pvals_cog_intermediate[paste0(stat_name), "Cog"] <- round(p_value, 3)
+}
+
+#2 CUTPOINTS
+
+lumi <- lumi %>%
+  mutate(greyzone = case_when(
+    ptau217_sens95 == 0 ~ 1,  # sens95 equals 0
+    ptau217_spec95 == 1 ~ 3,  # spec95 equals 1
+    TRUE ~ 2))
+lumi.filtered <- lumi %>% filter(greyzone != 2)
+
+boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
+
+stat_indices <- list(
+  "SCD vs. MCI Accuracy" = 10,"SCD vs. MCI PPV" = 11,"SCD vs. MCI NPV" = 12,
+  "SCD vs. Dem Accuracy" = 13,"SCD vs. Dem PPV" = 14,"SCD vs. Dem NPV" = 15,
+  "MCI vs. Dem Accuracy" = 16,"MCI vs. Dem PPV" = 17,"MCI vs. Dem NPV" = 18)
+  
+pvals_cog2 <- data.frame(
+  Cog = numeric(length(stat_indices)),
+  row.names = c( "SCD vs. MCI Accuracy","SCD vs. MCI PPV","SCD vs. MCI NPV",
+  "SCD vs. Dem Accuracy","SCD vs. Dem PPV","SCD vs. Dem NPV",
+  "MCI vs. Dem Accuracy","MCI vs. Dem PPV","MCI vs. Dem NPV"))
+
+bootstrap_replicates <- boot_results_twocutpoints$t
+
+for (stat_name in names(stat_indices)) {
+  index <- stat_indices[[stat_name]]
+  boot_diff <- boot_results_twocutpoints$t0[index]
+  results_underH0_diff <- bootstrap_replicates[, index] - mean(bootstrap_replicates[, index])
+  p_value <- mean(abs(results_underH0_diff) >= abs(boot_diff))
+  pvals_cog2[paste0(stat_name), "Cog"] <- round(p_value, 3)
+}
+
+
+results_2cp <- data.frame(
+  Cutpoint = "2 Cutpoint",
+  auc1 = round(results_delong$auc1a[1],3),
+  auc_ci_lower1 = round(results_delong$auc1_ci_low[1],3),
+  auc_ci_upper1 = round(results_delong$auc1_ci_high[1],3),
+  accuracy1 = round(boot_results_twocutpoints$t0[1], 3),
+  acc_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975))[1],3),
+  acc_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,1], c(0.025, 0.975))[2],3),
+  PPV1 = round(boot_results_twocutpoints$t0[2], 3),
+  ppv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975))[1],3),
+  ppv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,2], c(0.025, 0.975))[2],3),
+  NPV1 = round(boot_results_twocutpoints$t0[3], 3),
+  npv_ci_lower1 = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[1],3),
+  npv_ci_upper1 = round(quantile(boot_results_twocutpoints$t[,3], c(0.025, 0.975))[2],3),
+  
+  auc2 = round(results_delong$auc1a[3],3),
+  auc_ci_lower2 = round(results_delong$auc1_ci_low[3],3),
+  auc_ci_upper2 = round(results_delong$auc1_ci_high[3],3),
+  accuracy2 = round(boot_results_twocutpoints$t0[4], 3),
+  acc_ci_lower2 = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975))[1],3),
+  acc_ci_upper2 = round(quantile(boot_results_twocutpoints$t[,4], c(0.025, 0.975))[2],3),
+  PPV2 = round(boot_results_twocutpoints$t0[5], 3),
+  ppv_ci_lower2 = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975))[1],3),
+  ppv_ci_upper2 = round(quantile(boot_results_twocutpoints$t[,5], c(0.025, 0.975))[2],3),
+  NPV2 = round(boot_results_twocutpoints$t0[6], 3),
+  npv_ci_lower2 = round(quantile(boot_results_twocutpoints$t[,6], c(0.025, 0.975))[1],3),
+  npv_ci_upper2 = round(quantile(boot_results_twocutpoints$t[,6], c(0.025, 0.975))[2],3),
+  
+  auc3 = round(results_delong$auc2a[3],3),
+  auc_ci_lower3 = round(results_delong$auc2_ci_low[3],3),
+  auc_ci_upper3 = round(results_delong$auc2_ci_high[3],3),
+  accuracy3 = round(boot_results_twocutpoints$t0[7], 3),
+  acc_ci_lower3 = round(quantile(boot_results_twocutpoints$t[,7], c(0.025, 0.975))[1],3),
+  acc_ci_upper3 = round(quantile(boot_results_twocutpoints$t[,7], c(0.025, 0.975))[2],3),
+  PPV3 = round(boot_results_twocutpoints$t0[8], 3),
+  ppv_ci_lower3 = round(quantile(boot_results_twocutpoints$t[,8], c(0.025, 0.975))[1],3),
+  ppv_ci_upper3 = round(quantile(boot_results_twocutpoints$t[,8], c(0.025, 0.975))[2],3),
+  NPV3 = round(boot_results_twocutpoints$t0[9], 3),
+  npv_ci_lower3 = round(quantile(boot_results_twocutpoints$t[,9], c(0.025, 0.975))[1],3),
+  npv_ci_upper3 = round(quantile(boot_results_twocutpoints$t[,9], c(0.025, 0.975))[2],3),
+  
+  intermediate_n1 = round(boot_results_greyzone$t0[1],3),
+  intermediate_cilow1 = round(quantile(boot_results_greyzone$t[,1], c(0.025, 0.975))[1],3),
+  intermediate_cihigh1 = round(quantile(boot_results_greyzone$t[,1], c(0.025, 0.975))[2],3),
+  intermediate_n_percentage1= round(boot_results_greyzone$t0[2],3),
+  intermediate_n_percentage_low1= round(quantile(boot_results_greyzone$t[,2], c(0.025, 0.975))[1],3),
+  intermediate_n_percentage_high1= round(quantile(boot_results_greyzone$t[,2], c(0.025, 0.975))[2],3),
+  
+  intermediate_n2 = round(boot_results_greyzone$t0[3],3),
+  intermediate_cilow2 = round(quantile(boot_results_greyzone$t[,3], c(0.025, 0.975))[1],3),
+  intermediate_cihigh2 = round(quantile(boot_results_greyzone$t[,3], c(0.025, 0.975))[2],3),
+  intermediate_n_percentage2= round(boot_results_greyzone$t0[4],3),
+  intermediate_n_percentage_low2= round(quantile(boot_results_greyzone$t[,4], c(0.025, 0.975))[1],3),
+  intermediate_n_percentage_high2= round(quantile(boot_results_greyzone$t[,4], c(0.025, 0.975))[2],3),
+  
+  intermediate_n3 = round(boot_results_greyzone$t0[5],3),
+  intermediate_cilow3 = round(quantile(boot_results_greyzone$t[,5], c(0.025, 0.975))[1],3),
+  intermediate_cihigh3 = round(quantile(boot_results_greyzone$t[,5], c(0.025, 0.975))[2],3),
+  intermediate_n_percentage3= round(boot_results_greyzone$t0[6],3),
+  intermediate_n_percentage_low3= round(quantile(boot_results_greyzone$t[,6], c(0.025, 0.975))[1],3),
+  intermediate_n_percentage_high3= round(quantile(boot_results_greyzone$t[,6], c(0.025, 0.975))[2],3),
+  stringsAsFactors = FALSE)
+
+##BIND ALL----
+
+merged_comps_cognition <- rbind(results_1cp, results_2cp)
+openxlsx::write.xlsx(merged_comps_cognition,file="Fig3_Comparisons.xlsx", rowNames =T)
+
+pvalues_cognition <- rbind(
+  pvals_cog,
+  pvals_cog_intermediate,
+  pvals_cog2
+)
+openxlsx::write.xlsx(pvalues_cognition,file="Fig3_Comparisons_pvalues.xlsx", rowNames =T)
+
+```
+
+
+FIGURES
+
+##SCD 
+```{r SCD fig, echo=F}
+plot_auc <- cbind(merged_comps_cognition[0:2, 2:4])
+colnames(plot_auc) <- c("Measure1", "ci_low", "ci_high")
+plot_auc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_auc$Measure <- c("AUC", "AUC")
+
+plot_acc <- cbind(merged_comps_cognition[0:2, 5:7])
+colnames(plot_acc) <- c("Measure1", "ci_low", "ci_high")
+plot_acc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_acc$Measure <- c("Accuracy", "Accuracy")
+
+plot_ppv <- cbind(merged_comps_cognition[0:2, 8:10])
+colnames(plot_ppv) <- c("Measure1", "ci_low", "ci_high")
+plot_ppv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_ppv$Measure <- c("PPV", "PPV")
+
+plot_npv <- cbind(merged_comps_cognition[0:2, 11:13])
+colnames(plot_npv) <- c("Measure1", "ci_low", "ci_high")
+plot_npv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_npv$Measure <- c("NPV", "NPV")
+
+plot_grey_scd <- cbind(merged_comps_cognition[2:2, 41:43])
+colnames(plot_grey_scd) <- c("Measure1", "ci_low", "ci_high")
+plot_grey_scd$Measure <- c("SCD")
+
+plotdata <- rbind(plot_auc, plot_acc, plot_ppv, plot_npv)
+
+plotdata <- plotdata %>% drop_na
+
+group_order <- c("AUC", "NPV", "PPV", "Accuracy")
+tick_positions <- seq(50, 100, by = 10)
+col_ord <- c("1 Cutpoint", "2 Cutpoint")
+
+#plot
+ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 * 100, color=rev(Cutpoint))) +
+  geom_vline(xintercept = tick_positions, color = "grey80", linewidth = 0.5, alpha=0.5) +
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.2, linewidth = 0.5, position = position_dodge(width = 0.8)) +
+  geom_point(position = position_dodge(width = 0.8), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(40,124),breaks = seq(40,124, by=10),expand =c(0,0))+
+  labs(x = "Percentage", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), group=rev(Cutpoint), x=94), 
+            position = position_dodge(width = 0.8), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#4DBBD5FF", "#E64B35FF"), labels=c("2 cutpoints", "1 cutpoint"), guide="none")+
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10, face = "bold"),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),  
+        legend.title = element_text(size = 8))
+ggsave("Fig3_SCD.pdf",device = "pdf",width = 100, dpi=500, height = 70, units = "mm")
+
+```
+
+##MCI
+```{r MCI fig, echo=F}
+plot_auc <- cbind(merged_comps_cognition[0:2, 14:16])
+colnames(plot_auc) <- c("Measure1", "ci_low", "ci_high")
+plot_auc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_auc$Measure <- c("AUC", "AUC")
+
+plot_acc <- cbind(merged_comps_cognition[0:2, 17:19])
+colnames(plot_acc) <- c("Measure1", "ci_low", "ci_high")
+plot_acc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_acc$Measure <- c("Accuracy", "Accuracy")
+
+plot_ppv <- cbind(merged_comps_cognition[0:2, 20:22])
+colnames(plot_ppv) <- c("Measure1", "ci_low", "ci_high")
+plot_ppv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_ppv$Measure <- c("PPV", "PPV")
+
+plot_npv <- cbind(merged_comps_cognition[0:2, 23:25])
+colnames(plot_npv) <- c("Measure1", "ci_low", "ci_high")
+plot_npv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_npv$Measure <- c("NPV", "NPV")
+
+plot_grey_mci <- cbind(merged_comps_cognition[2:2, 47:49])
+colnames(plot_grey_mci) <- c("Measure1", "ci_low", "ci_high")
+plot_grey_mci$Measure <- c("MCI")
+
+plotdata <- rbind(plot_auc, plot_acc, plot_ppv, plot_npv)
+plotdata <- plotdata[1:8,]
+
+group_order <- c("AUC", "NPV", "PPV", "Accuracy")
+tick_positions <- seq(70, 100, by = 10)
+col_ord <- c("1 Cutpoint", "2 Cutpoint")
+
+#plot
+ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 * 100, color=rev(Cutpoint))) +
+  geom_vline(xintercept = tick_positions, color = "grey80", linewidth = 0.5, alpha=0.5) +
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.2, linewidth = 0.5, position = position_dodge(width = 0.8)) +
+  geom_point(position = position_dodge(width = 0.8), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,124),breaks = seq(40,124, by=10),expand =c(0,0))+
+  labs(x = "Percentage", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), group=rev(Cutpoint), x=94), 
+            position = position_dodge(width = 0.8), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#4DBBD5FF", "#E64B35FF"), labels=c("2 cutpoints", "1 cutpoint"), guide="none")+
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10, face = "bold"),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8))
+
+ggsave("Fig3_MCI.pdf",device = "pdf",width = 100, dpi=500, height = 70, units = "mm")
+
+```
+
+##Dementia
+```{r Dem fig, echo=F}
+plot_auc <- cbind(merged_comps_cognition[0:2, 26:28])
+colnames(plot_auc) <- c("Measure1", "ci_low", "ci_high")
+plot_auc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_auc$Measure <- c("AUC", "AUC")
+
+plot_acc <- cbind(merged_comps_cognition[0:2, 29:31])
+colnames(plot_acc) <- c("Measure1", "ci_low", "ci_high")
+plot_acc$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_acc$Measure <- c("Accuracy", "Accuracy")
+
+plot_ppv <- cbind(merged_comps_cognition[0:2, 32:34])
+colnames(plot_ppv) <- c("Measure1", "ci_low", "ci_high")
+plot_ppv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_ppv$Measure <- c("PPV", "PPV")
+
+plot_npv <- cbind(merged_comps_cognition[0:2, 35:37])
+colnames(plot_npv) <- c("Measure1", "ci_low", "ci_high")
+plot_npv$Cutpoint <- c("1 Cutpoint", "2 Cutpoint")
+plot_npv$Measure <- c("NPV", "NPV")
+
+plot_grey_dem <- cbind(merged_comps_cognition[2:2, 53:55])
+colnames(plot_grey_dem) <- c("Measure1", "ci_low", "ci_high")
+plot_grey_dem$Measure <- c("Dementia")
+
+
+plotdata <- rbind(plot_auc, plot_acc, plot_ppv, plot_npv)
+plotdata <- plotdata[1:8,]
+
+group_order <- c("AUC", "NPV", "PPV", "Accuracy")
+tick_positions <- seq(50, 100, by = 10)
+col_ord <- c("1 Cutpoint", "2 Cutpoint")
+
+#plot
+ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 * 100, color=rev(Cutpoint))) +
+  geom_vline(xintercept = tick_positions, color = "grey80", linewidth = 0.5, alpha=0.5) +
+  geom_errorbar(aes(xmin = ci_low * 100, xmax = ci_high * 100),
+                width = 0.2, linewidth = 0.5, position = position_dodge(width = 0.8)) +
+  geom_point(position = position_dodge(width = 0.8), size = 4, stroke = 0.5) +
+  scale_x_continuous(limits=c(70,124),breaks = seq(40,124, by=10),expand =c(0,0))+
+  labs(x = "Percentage", y = "") +
+  geom_text(aes(label = sprintf("%.f (%.f-%.f)", Measure1 * 100, ci_low * 100, ci_high * 100), group=rev(Cutpoint), x=94), 
+            position = position_dodge(width = 0.8), hjust = -0.3, size = 3, color = "black") +
+  scale_color_manual(values=c("#4DBBD5FF", "#E64B35FF"), labels=c("2 cutpoints", "1 cutpoint"), guide="none")+
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10, face = "bold"),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_text(face = "bold"),
+        legend.text = element_text(size = 8),  
+        legend.title = element_text(size = 8))
+
+ggsave("Fig3_Dem.pdf",device = "pdf",width = 100, dpi=500, height = 70, units = "mm")
+
+```
+
+##Intermediate
+```{r barplot intermediate, echo=F}
+plot_grey <- rbind(plot_grey_scd, plot_grey_mci, plot_grey_dem)
+group_order <- c("SCD", "MCI", "Dementia")
+
+ggplot(data = plot_grey, aes(x = factor(cognition, levels = group_order), y = Measure1, fill = factor(Measure, levels = group_order))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.1), color = "black", width = 0.4, alpha=0.4) +
+  geom_errorbar(aes(ymax = ci_high, ymin = ci_low),
+                position = position_dodge(width = 0.1), width = 0.2, size = 0.5, color = "black") +
+  geom_text(aes(label = sprintf("%.1f", Measure1)), 
+            position = position_dodge(width = 0.1), vjust = -1.5, hjust = 1.1, size = 4) +
+  scale_y_continuous(limits=c(0,20),breaks = seq(0,20, by=5),expand =c(0,0))+
+  scale_fill_manual(values = c("#3C5488FF", "#3C5488FF", "#3C5488FF"), labels = c("SCD", "MCI", "Dementia"), guide="none") +
+  labs(title = element_blank(), x = "Plasma p-tau217", y = "Intermediate values (%)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size=11, angle=45,  hjust=0.5,vjust=0.6,face="bold"),
+        axis.text.y = element_text(size=10),
+        axis.title.x = element_text(face = "bold", size=11),
+        axis.title.y= element_text(face = "bold", size=11))  
+
+ggsave("Fig3_Intermediates.pdf",device = "pdf",width = 80, dpi=500, height = 80, units = "mm")
+```
+
