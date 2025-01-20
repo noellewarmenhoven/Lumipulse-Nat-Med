@@ -307,7 +307,7 @@ results1 <- data.frame(
 )
 
 openxlsx::write.xlsx(results1,
-                     file="~/Documents/Projects/LumiPulse/Lumi-MultiCohort/Results new/Fig1/Comparisons_1cp_pooled.xlsx")
+                     file="Fig1/Comparisons_1cp_pooled.xlsx")
 
 #Greyzone differences
 f_comp_stats_greyzone <- function(data, indices) {

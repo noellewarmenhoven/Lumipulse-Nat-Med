@@ -2478,7 +2478,7 @@ ggsave("Fig2_AUC.pdf",device = "pdf",width = 100, dpi=500, height = 90, units = 
 
 ```{r figures 2 cutpoint, echo=F}
 
-plotdata <- read.xlsx("~/Documents/Projects/LumiPulse/Lumi-MultiCohort/Results new/Fig4/Fig4_Plotdata_sensitivity.xlsx")
+plotdata <- read.xlsx("Fig4_Plotdata_sensitivity.xlsx")
 plotdata <- plotdata[grep("2 Cutpoint", plotdata$Cutpoint), ]
 
 plotdata$modeltype <- factor(plotdata$group, levels = c(2,1))
@@ -2583,7 +2583,7 @@ imerged_age$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint",
 plotdata_i <- bind_rows(imerged_gender, imerged_education, imerged_CKD,imerged_diabetes,imerged_apoe, imerged_age)
 plotdata_i <- plotdata_i[grep("2 Cutpoint", plotdata_i$Cutpoint), ]
 
-openxlsx::write.xlsx(plotdata_i,file="Fi2_plotdata_intermediate.xlsx", rowNames =T)
+openxlsx::write.xlsx(plotdata_i,file="Fig2_plotdata_intermediate.xlsx", rowNames =T)
 
 
 desired_order <- c("Sex", "APOE", "Education", "CKD", "Diabetes", "Age")
@@ -5392,7 +5392,7 @@ merged_apoe2$Cohort <- "APOE"
 merged_apoe2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
 
 #Age
-merged_age <- read_xlsx("ge_BFPC.xlsx")
+merged_age <- read_xlsx("Age_BFPC.xlsx")
 rownames(merged_age) <- merged_age[[1]]  # Use the first column as row names
 merged_age <- merged_age[ , -1]  
 group1_age <- cbind(merged_age[0:2, 1:12], merged_age[0:2, 72:74])
