@@ -1,4 +1,4 @@
-##Bootstrapping thresholds
+#Bootstrapping thresholds for plasma biomarkers
 
 library(boot)
 library(cutpointr) 
@@ -14,8 +14,7 @@ lumi <- read_xlsx("BFMC_data.xlsx")
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 
 
-
-##For Lumi plasma p-tau217----
+##Thresholds for Lumi plasma p-tau217----
 
 f_thresholds <- function(data, indices){
   d <- data[indices, ]
@@ -85,7 +84,7 @@ lumi_youden <-mean(boot_res$t[,4], na.rm=T)
 # lumi_ci_youden_formatted <- paste0(round(lumi_youden,3), " (", lumi_youden_ci_low, "-",lumi_youden_ci_upper, ")")
 
 
-##For C2N plasma p-tau217----
+##Thresholds for C2N plasma p-tau217----
 
 library(pROC)
 f_thresholds_c2n <- function(data, indices){
@@ -157,7 +156,7 @@ c2n_youden <-mean(boot_res_c2n$t[,4], na.rm=T)
 # c2n_youden_formatted <- paste0(round(c2n_youden,3), " (", c2n_youden_low, "-",c2n_youden_high, ")")
 
 
-##For C2N plasma %p-tau217----
+##Thresholds for C2N plasma %p-tau217----
 lumi  <- lumi %>% drop_na(p_tau217_ratio_v2, csf_status)
 f_thresholds_c2nratio <- function(data, indices){
   d <- data[indices, ]
@@ -227,7 +226,7 @@ c2nratio_youden <- mean(boot_res_c2nratio$t[,4], na.rm=T)
 # c2n_ratio_youden_formatted <- paste0(round(c2nratio_youden,3), " (", c2n_ratio_youden_low, "-",c2n_ratio_youden_high, ")")
 
 
-#For p-tau217ab42----
+#Thresholds for p-tau217ab42 Lumipulse----
 #lumi <- read_xlsx("BFMC_data.xlsx") 
 
 lumi$ptau217_ab42 <- (lumi$pl_ptau217)/(lumi$ab42)

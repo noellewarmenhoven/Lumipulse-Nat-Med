@@ -5,10 +5,10 @@ date: "2024-08-08"
 output: html_document
 ---
 
-This document contains the code used for estimating p-tau217 performances across the 5 different cohorts. 
+This document contains the code used for estimating p-tau217 (Lumipulse) performances across the 5 different cohorts. 
 
 Codes to run analyses
-#Main Figure 1: p-tau217 performances across cohorts. 
+#Analyses for Figure 1: p-tau217 performances across cohorts. 
 ```{r ptau217 across cohorts, include=FALSE, echo=FALSE}
 library(dplyr)
 library(pROC)
@@ -27,7 +27,7 @@ BFPC <- read_xlsx("BFPC_data.xlsx")
 datasets <- list(BFMC, Goth, BBRC, Bres, BFPC)
 dataset_names <- c("Malmö", "Gothenburg", "Barcelona", "Brescia", "Primary care")
 
-#Run analyses
+#Run analyses 
 run_analysis <- function(lumi, name) {
   
     lumi <- lumi %>% drop_na(pl_ptau217) #plasma p-tau217
@@ -100,7 +100,7 @@ run_analysis <- function(lumi, name) {
       row.names = "1 Cutpoint")
 
     #Filter out intermediate participants ----
-    lumi$greyzone <- ifelse(lumi$ptau217_sens95 == 0| lumi$ptau217_spec95 == 1, 1, 0) #Intermediate values get assigned 0
+    lumi$greyzone <- ifelse(lumi$ptau217_sens95 == 0 | lumi$ptau217_spec95 == 1, 1, 0) #Intermediate values get assigned 0
     lumi.filtered <- lumi %>% filter(greyzone == 1)
 
     #Define function to bootstrap #n intermediate participants ----
@@ -112,13 +112,13 @@ run_analysis <- function(lumi, name) {
       return(c(intermediate_npercent, intermediate_n))
     }
     
-    #Bootstrap to get 95%CI of #n intermediates ----
+    #Bootstrap to get 95%CI of %n intermediates ----
     set.seed(12345)
     boot_results_greyzone <- boot(data = lumi, statistic = f_greyzone, R = 2000, roc_curve = roc_curve)
     greyzone_CI <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 2)
     greyzone_percentage <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 1)
     
-    #Repeat first bootstrap in filtered sample, without intermediate participants ----
+    #Repeat function in filtered sample for 2 cutoff approach, without intermediate participants ----
     set.seed(12345)
     boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -172,7 +172,7 @@ for (i in seq_along(datasets)) {
 ```
 
 #Compare pooled cohorts to primary care
-```{r ptau217 pooled vs. primarey, include=F, echo=F}
+```{r ptau217 pooled vs. primary, include=F, echo=F}
 BFMC <- read_xlsx("BFMC_data.xlsx")
 BFMC$ptau217_spec90 <- ifelse(BFMC$pl_ptau217 > 0.27, 1, 0)
 BFMC$ptau217_spec95 <- ifelse(BFMC$pl_ptau217 > 0.34, 1, 0)
@@ -204,6 +204,8 @@ BFPC$ptau217_sens95 <- ifelse(BFPC$pl_ptau217 > 0.22, 1, 0)
 BFPC$csf_status <- as.factor(BFPC$csf_status)
 
 all_data <- rbind(BFMC, Goth, BBRC, Bres, BFPC)
+
+#Start with 1 cutoff approach 
 
 results1 <- list()
 
@@ -250,7 +252,7 @@ f_comp_stats <- function(data, indices) {
 set.seed(12345)
 boot_results <- boot(data = all_data, statistic = f_comp_stats, R = 2000)
 
-#differences between cohorts p vales
+#Differences between cohorts p values, 1cp
 stat_indices <- list("Pooled_BFPC p Accuracy" = 9,"Pooled_BFPC p PPV" = 10,"Pooled_BFPC p NPV" = 11,"Pooled_BFPC p AUC" = 12)
 
 pvals_1cp <- data.frame(
@@ -309,7 +311,7 @@ results1 <- data.frame(
 openxlsx::write.xlsx(results1,
                      file="Fig1/Comparisons_1cp_pooled.xlsx")
 
-#Greyzone differences
+#Intermediate zone differences
 f_comp_stats_greyzone <- function(data, indices) {
   d <- as.data.frame(data[indices,])
   d$greyzone <- ifelse(d$ptau217_sens95 == 0| d$ptau217_spec95 == 1, 1, 0)
@@ -351,10 +353,8 @@ quantile(boot_results_grey$t[, 4], 0.975)
 
 #Two cutoffs
 results2 <- list()
-
 all_data$greyzone <- ifelse(all_data$ptau217_sens95 == 0| all_data$ptau217_spec95 == 1, 1, 0)
 all_data_filt <- all_data %>% filter(greyzone == 1) #filter out those that fall in the greyzone and repeat analyses
-
 set.seed(12345)
 boot_results_two <- boot(data = all_data_filt, statistic = f_comp_stats, R = 2000)
 
@@ -419,11 +419,11 @@ results2 <- data.frame(
 openxlsx::write.xlsx(results2,
                      file="Comparisons_2cp_pooled.xlsx")
 
-
 ```
 
 
-PLOTS 
+PLOTS
+-------------------------------------------------------------------------------
 
 #Boxplots (Sup. Fig. 1)
 ```{r boxplots Sup. Fig1, echo=F}

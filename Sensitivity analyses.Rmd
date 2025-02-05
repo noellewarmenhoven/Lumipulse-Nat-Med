@@ -4,12 +4,12 @@ author: "Noelle"
 date: "2024-08-08"
 output: html_document
 ---
-This document contains all sensitivity analyses.
+This document contains all sensitivity analyses (supplementary figures 2-4).
 
 #CSF AB42/40 as outcome
 
 ##Set cutoff using AB42/40 as outcome first
-```{r cutoff set, include=F}
+```{r cutoff set ab4240, include=F}
 library(readxl)
 library(boot)
 library(pROC)
@@ -594,7 +594,7 @@ results_twocp <- data.frame(
 
 #Excel files
 merged <- rbind(results_1cp, results_twocp) %>% 
-  mutate(Cohort = "ADetect")%>%
+  mutate(Cohort = "BFPC")%>%
   rownames_to_column(var = "Approach") #merge 2 dataframes
 openxlsx::write.xlsx(merged,file="BFPC_NoCSF.xlsx")
 ```
@@ -668,9 +668,7 @@ ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 
 
 #Using the Youden index to check cutoff differences
 
-##Set up data
-
-#Stats
+##Stats
 ```{r run analyses, include=FALSE}
 library(dplyr)
 library(pROC)
@@ -810,7 +808,7 @@ for (i in seq_along(datasets)) {
 }
 ```
 
-#Figures
+##Figures
 
 ```{r Figures 1cp, echo=F}
 library(readxl)

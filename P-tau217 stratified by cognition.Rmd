@@ -4,7 +4,7 @@ author: "Noelle"
 date: "2024-07-19"
 output: html_document
 ---
-This document contains code used for the stratified analyses for different cognitive groups.  
+This document contains code used for the stratified p-tau217 (Lumipulse) analyses for different cognitive groups.  
 
 ```{r setup, include=FALSE}
 library(boot)
@@ -15,13 +15,13 @@ library(dplyr)
 library(ggplot2)
 library(openxlsx)
 
-lumi <- read.xlsx("POOLED_data_cognition.xlsx") ##or
+lumi <- read.xlsx("POOLED_data_cognition.xlsx")
 
 lumi$ptau217_spec90 <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
 lumi$ptau217_spec95 <- ifelse(lumi$pl_ptau217 > 0.34, 1, 0)
 lumi$ptau217_sens95 <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0)
 
-lumi <- lumi %>% drop_na(cognitive_status) #n = 1766
+lumi <- lumi %>% drop_na(cognitive_status)
 lumi <- lumi %>%
   mutate(cognitive_status = recode(cognitive_status,
                                     "1" = "SCD",
@@ -73,7 +73,6 @@ for (i in seq_along(cognition)){
   }
 }
 results_delong <- do.call(rbind.data.frame, results_delong)
-#results_delong$padj <- round(p.adjust(results_delong$pval, method = "fdr"),3)
 openxlsx::write.xlsx(results_delong,
                      file="DeLong_Cognition.xlsx")
 
@@ -258,7 +257,7 @@ results_1cp <- data.frame(
   stringsAsFactors = FALSE)
 
 
-#GREYZONE
+#Calculate those in the intermediate zone
 f_greyzone <- function(data, indices, roc_curve){
   d <- data[indices, ]
   
@@ -282,8 +281,8 @@ f_greyzone <- function(data, indices, roc_curve){
   intermediate_n_dem <- length(which(d3$greyzone ==2))
   intermediate_npercent_dem <- round((length(which(d3$greyzone == 2)) / nrow(d3)) * 100, 3)
   
-  #DIFFERENCES BETWEEN ASSAYS
-  ##Scd vs. MCI
+  #DIFFERENCES BETWEEN COGNITIVE GROUPS
+  ##SCD vs. MCI
   diff_n_scd_mci <- intermediate_n_scd - intermediate_n_mci
   diff_nperc_scd_mci <- intermediate_npercent_scd - intermediate_npercent_mci
 
@@ -295,8 +294,10 @@ f_greyzone <- function(data, indices, roc_curve){
   diff_n_mci_dem <- intermediate_n_mci - intermediate_n_dem
   diff_nperc_mci_dem <- intermediate_npercent_mci - intermediate_npercent_dem
 
-  return(c(intermediate_n_scd, intermediate_npercent_scd, intermediate_n_mci,intermediate_npercent_mci,intermediate_n_dem,intermediate_npercent_dem,#6
-           diff_n_scd_mci, diff_nperc_scd_mci, diff_n_scd_dem,diff_nperc_scd_dem,diff_n_mci_dem,diff_nperc_mci_dem))
+  return(c(intermediate_n_scd, intermediate_npercent_scd,
+           intermediate_n_mci,intermediate_npercent_mci,intermediate_n_dem,intermediate_npercent_dem,#6
+           diff_n_scd_mci, diff_nperc_scd_mci,
+           diff_n_scd_dem,diff_nperc_scd_dem,diff_n_mci_dem,diff_nperc_mci_dem))
 }
 
 set.seed(12345)
@@ -323,7 +324,7 @@ for (stat_name in names(stat_indices)) {
   pvals_cog_intermediate[paste0(stat_name), "Cog"] <- round(p_value, 3)
 }
 
-#2 CUTPOINTS
+#2 cutoff approach, repeat without intermediate participants.
 
 lumi <- lumi %>%
   mutate(greyzone = case_when(
@@ -419,7 +420,7 @@ results_2cp <- data.frame(
   intermediate_n_percentage_high3= round(quantile(boot_results_greyzone$t[,6], c(0.025, 0.975))[2],3),
   stringsAsFactors = FALSE)
 
-##BIND ALL----
+##BIND ALL RESULTS----
 
 merged_comps_cognition <- rbind(results_1cp, results_2cp)
 openxlsx::write.xlsx(merged_comps_cognition,file="Fig3_Comparisons.xlsx", rowNames =T)

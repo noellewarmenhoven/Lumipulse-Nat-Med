@@ -4,9 +4,9 @@ author: "Noelle"
 date: "2024-07-10"
 output: html_document
 ---
-This document contains code used for the stratified analyses for different covariates and comorbidities. 
+This document contains code used for all the stratified analyses for different covariates and comorbidities. 
 
-#Pooling all cohorts together
+#Figure 2 analyses: Effects of demographic factors and comorbidities on plasma p-tau217 (Lumipulse) performance. 
 ```{r setup, echo=FALSE}
 library(boot)
 library(cutpointr) 
@@ -25,31 +25,10 @@ lumi$ptau217_sens95 <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0)
 lumi.df <- lumi
 ```
 
-#Figure 2 analyses: Effects of demographic factors and comorbidities on plasma p-tau217 (Lumipulse) performance. 
+##Analyses
+###Sex
 
-##Sex
-###Boxplot sex
-```{r boxplot sex, echo=F}
-lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
-
-ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
-  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
-geom_jitter(aes(color = factor(strat)), 
-              size = 0.6, alpha = 0.25, 
-              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +   scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), name = "Legend") +
-  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), guide="none") +
-  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
-  scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
-  geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
-  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
-  labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
-  theme_classic()+
-  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
-
-ggsave("Boxplot_sex.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
-```
-
-###Analyses sex
+####Analyses sex
 ```{r split by sex, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = sex)
@@ -70,7 +49,7 @@ auc2 <- ci.auc(roc_curve2)[2] #AUC will be bootstrapped 2000 times, already incl
 results_delong <- roc.test(roc_curve1, roc_curve2, method = "delong")
 pval_delong <- round(results_delong$p.value,3)
 
-##Calculate Accuracy, PPV, NPV and 95% CIs ----
+##Calculate Accuracy, PPV, NPV and 95% CIs 1 cutoff ----
 
 f_comp_stats <- function(data, indices) {
   d <- as.data.frame(data[indices,])
@@ -197,6 +176,7 @@ boot_npvdiff <- boot_results$t0[13]
 results_underH0_npvdiff <- bootstrap_replicates[,13] - mean(bootstrap_replicates[,13])
 boot_pvalue_npvdiff <- mean(abs(results_underH0_npvdiff) >= abs(boot_npvdiff))
 
+#Store p-values 1cp in dataframe
 pvals_gender <- data.frame(
   Gender = c(
     round(boot_pvalue_accdiff, 3),
@@ -229,7 +209,7 @@ f_greyzone <- function(data, indices, roc_curve){
   return(c(intermediate_npercent1, intermediate_n1, intermediate_npercent2,intermediate_n2,diff_intermediaten,diff_percent))
 }
 
-##Bootstrap to get 95%CI of #n intermediates ----
+##Bootstrap to get 95%CI of %n intermediates ----
 set.seed(12345)
 boot_results_greyzone <- boot(data = lumi, statistic = f_greyzone, R = 2000)
 greyzone_CI1 <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 2)
@@ -237,7 +217,7 @@ greyzone_percentage1 <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,
 greyzone_CI2 <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 4)
 greyzone_percentage2 <- boot.ci(boot_results_greyzone, type = "norm",seed=12345,index = 3)
 
-# Bootstrapped comparisons between #n greyzone (redundant)
+# Bootstrapped comparisons between %n greyzone (redundant)
 bootstrap_replicates <- boot_results_greyzone$t
 boot_ndiff <- boot_results_greyzone$t0[5]
 results_underH0_ndiff <- bootstrap_replicates[,5] - mean(bootstrap_replicates[,5])
@@ -255,7 +235,7 @@ pvals_gender_n <- data.frame(
     round(boot_pvalue_npercdiff, 3), NA, NA,NA))
 rownames(pvals_gender_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval","Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -339,7 +319,7 @@ rownames(pvals_gender_2) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong p
 
 #Store data 3 ----
 merged_gender <- rbind(results_1cp, results_twocp) %>% 
-  mutate(Cohort = "Gender") #merge 2 dataframes
+  mutate(Cohort = "Sex") #merge 2 dataframes
 merged_gender$modeltype <- c("1", "2")
 participants_g1 <- nrow(lumi.1)
 participants_g1_csf0 <- sum(lumi.1$csf_status == 0)
@@ -351,7 +331,7 @@ participants_g2_csf1 <- sum(lumi.2$csf_status == 1)
 merged_gender$G1 <- c(paste(participants_g1_csf0, "/", participants_g1_csf1), paste(participants_g1_csf0, "/", participants_g1_csf1))
 merged_gender$G2 <- c(paste(participants_g2_csf0, "/", participants_g2_csf1), paste(participants_g2_csf0, "/", participants_g2_csf1))
 
-openxlsx::write.xlsx(merged_gender,file="Fig2_Gender.xlsx", rowNames =T)
+openxlsx::write.xlsx(merged_gender,file="Fig2_Sex.xlsx", rowNames =T)
 
 pvalues_gender <- rbind(
   pvals_gender,
@@ -360,13 +340,33 @@ pvalues_gender <- rbind(
 )
 pvalues_gender <- pvalues_gender %>% drop_na()
 pvalues_gender$DeLong <- pval_delong
-openxlsx::write.xlsx(pvalues_gender,file="~Fig2_Gender_Pvalues.xlsx", rowNames =T)
+openxlsx::write.xlsx(pvalues_gender,file="~Fig2_Sex_Pvalues.xlsx", rowNames =T)
 
 ```
 
-##APOE
+####Boxplot sex
+```{r boxplot sex, echo=F}
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 
-###Boxplot APOE
+ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +   scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Males", "Females"), guide="none") +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
+  geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
+
+ggsave("Boxplot_sex.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+```
+###APOE
+
+####Boxplot APOE
 ```{r boxplot APOE, echo=F}
 
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
@@ -389,7 +389,7 @@ ggsave("Boxplot_APOE.pdf",device = "pdf",width = 120, dpi=500, height = 80, unit
 
 ```
 
-###Analyses APOE
+####Analyses APOE
 ```{r split by APOE, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = apoe)
@@ -411,7 +411,7 @@ auc2 <- ci.auc(roc_curve2)[2] #AUC will be bootstrapped 2000 times, already incl
 results_delong <- roc.test(roc_curve1, roc_curve2, method = "delong")
 pval_delong <-round(results_delong$p.value,3)
 
-##Calculate Accuracy, PPV, NPV and 95% CIs ----
+##Calculate Accuracy, PPV, NPV and 95% CIs 1 cutoff ----
 
 f_comp_stats <- function(data, indices) {
   d <- as.data.frame(data[indices,])
@@ -598,7 +598,7 @@ pvals_apoe_n <- data.frame(
     round(boot_pvalue_npercdiff, 3), NA, NA,NA))
 rownames(pvals_apoe_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval", "Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -706,32 +706,10 @@ openxlsx::write.xlsx(pvalues_apoe,file="Fig2_APOE_Pvalues.xlsx", rowNames =T)
 
 ```
 
-##Diabetes
-
-###Boxplot Diabetes
-```{r boxplot diabetes, echo=F}
-lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
-
-ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
-  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
-geom_jitter(aes(color = factor(strat)), 
-              size = 0.6, alpha = 0.25, 
-              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +  scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), name = "Legend") +
-  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), guide="none") +
-  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
-  scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
-  geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
-  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
-  labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
-  theme_classic()+
-  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
-
-ggsave("Boxplot_diabetes.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
-
-```
+###Diabetes
 
 
-###Analayses Diabetes
+####Analyses Diabetes
 ```{r split by diabetes, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = diabetes)
@@ -939,7 +917,7 @@ pvals_diabetes_n <- data.frame(
     round(boot_pvalue_npercdiff, 3), NA, NA,NA))
 rownames(pvals_diabetes_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval","Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach  ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -1047,18 +1025,16 @@ openxlsx::write.xlsx(pvalues_diabetes,file="Fig2_Diabetes_Pvalues.xlsx", rowName
 
 ```
 
-##CKD
-
-###Boxplot CKD
-```{r boxplot CKD, echo=F}
+####Boxplot Diabetes
+```{r boxplot diabetes, echo=F}
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 
 ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
   geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
 geom_jitter(aes(color = factor(strat)), 
               size = 0.6, alpha = 0.25, 
-              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), name = "Legend") +
-  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), guide="none") +
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +  scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("Diabetes-", "Diabetes+"), guide="none") +
   scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
   scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
   geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
@@ -1067,10 +1043,12 @@ geom_jitter(aes(color = factor(strat)),
   theme_classic()+
   stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
 
-ggsave("Boxplot_CKD.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
-```
+ggsave("Boxplot_diabetes.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
 
-###Analyses CKD
+```
+###CKD
+
+####Analyses CKD
 ```{r split by CKD, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = CKD)
@@ -1279,7 +1257,7 @@ pvals_ckd_n <- data.frame(
     round(boot_pvalue_npercdiff, 3), NA, NA,NA))
 rownames(pvals_ckd_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval","Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -1385,24 +1363,20 @@ pvalues_ckd <- rbind(
 pvalues_ckd <- pvalues_ckd %>% drop_na()
 pvalues_ckd$DeLong <- pval_delong
 openxlsx::write.xlsx(pvalues_ckd,file="Fig2_
-                     CKD_Pvalues_new.xlsx", rowNames =T)
+                     CKD_Pvalues.xlsx", rowNames =T)
 ```
 
 
-
-##Education
-
-###Boxplot Education
-```{r boxplot Educ, echo=F}
-
+####Boxplot CKD
+```{r boxplot CKD, echo=F}
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 
 ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
   geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
 geom_jitter(aes(color = factor(strat)), 
               size = 0.6, alpha = 0.25, 
-              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), name = "Legend") +
-  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), guide="none") +
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("CKD-", "CKD+"), guide="none") +
   scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
   scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
   geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
@@ -1411,11 +1385,11 @@ geom_jitter(aes(color = factor(strat)),
   theme_classic()+
   stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
 
-ggsave("Boxplot_Education.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
-
+ggsave("Boxplot_CKD.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
 ```
+###Education
 
-###Analyses Education
+####Analyses Education
 ```{r split by education, echo=F}
 lumi <- lumi.df
 lumi$education_median <- ifelse(lumi$education < median(lumi$education, na.rm = TRUE), 0, 1)
@@ -1624,7 +1598,7 @@ pvals_education_n <- data.frame(
     round(boot_pvalue_npercdiff, 3), NA, NA,NA))
 rownames(pvals_education_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval", "Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -1733,51 +1707,32 @@ openxlsx::write.xlsx(pvalues_education,file="Fig2_Education_Pvalues.xlsx", rowNa
 ```
 
 
-##Age tertiles split
+####Boxplot Education
+```{r boxplot Educ, echo=F}
 
-###Age boxplots 
-
-```{r boxplot age, echo=F}
-library(ggsignif)
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 
-stat_test <- compare_means(pl_ptau217 ~ strat,  data = lumi, group.by = "csf_status", method="t.test")
-
-my_comparisons <- list( c("2", "1"), c("2", "0"), c("1", "0"))
-my_comparisons <- list( c("<73", "73-80"), c("<73", "> 80"), c("73-80", "> 80"))
-
-mean(lumi.1$pl_ptau217[lumi.1$csf_status == 0])
-mean(lumi.1$pl_ptau217[lumi.1$csf_status == 1])
-
-mean(lumi.2$pl_ptau217[lumi.2$csf_status == 0])
-mean(lumi.2$pl_ptau217[lumi.2$csf_status == 1])
-
-mean(lumi.3$pl_ptau217[lumi.3$csf_status == 0])
-mean(lumi.3$pl_ptau217[lumi.3$csf_status == 1])
-
-stat_test$p.adj <- round(stat_test$p.adj,3)
-stat_test$p <- round(stat_test$p,3)
-lumi$group <- interaction(lumi$csf_status, lumi$strat)
-
-ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = group)) +
+ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = interaction(csf_status, strat))) +
   geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
 geom_jitter(aes(color = factor(strat)), 
               size = 0.6, alpha = 0.25, 
-              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +   scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), labels = c("<73", "73-80", "> 80"), name="Legend") +
-  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), guide = "none", labels = c("<73", "73-80", "> 80")) +
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +    scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), name = "Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF"), labels = c("< 10 years", "> 10 years"), guide="none") +
   scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
   scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
   geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
   scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
   labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
   theme_classic()+
-  stat_compare_means(label = "p.signif", method = "t.test", label.y=3.5)
+  stat_compare_means(method="t.test", label="p.signif", label.x = 1.5, label.y = 3.0)
 
-ggsave("Boxplot_age.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
-stat_test
+ggsave("Boxplot_Education.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+
 ```
 
-###Age analyses
+###Age tertiles split
+
+####Age analyses
 ```{r split by age, echo=F}
 lumi <- lumi.df
 lumi$age_category <- ifelse(lumi$age >= 80, 2, ifelse(lumi$age < median(lumi$age[lumi$age < 80], na.rm = TRUE), 0, 1)) 
@@ -2134,7 +2089,7 @@ pvals_age_n <- data.frame(
     round(boot_pvalue_npercdiff13, 3), NA, NA,NA))
 rownames(pvals_age_n) <- c("Accuracy pval", "PPV pval", "NPV pval", "DeLong pval","Intermediate N", "Intermediate N%", "Accuracy2cutpoints", "PPV2cutpoints", "NPV2cutpoints")
 
-##Repeat bootstrap in filtered sample, remove intermediate participants ----
+##Repeat bootstrap in filtered sample, remove intermediate participants, 2 cutoff approach ----
 set.seed(12345)
 boot_results_twocutpoints <- boot(data = lumi.filtered, statistic = f_comp_stats, R = 2000)
 
@@ -2305,30 +2260,68 @@ openxlsx::write.xlsx(pvalues_age,file="Fig2_Age_Pvalues.xlsx", rowNames =T)
 
 ```
 
+####Age boxplots 
+
+```{r boxplot age, echo=F}
+library(ggsignif)
+lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
+
+stat_test <- compare_means(pl_ptau217 ~ strat,  data = lumi, group.by = "csf_status", method="t.test")
+
+my_comparisons <- list( c("2", "1"), c("2", "0"), c("1", "0"))
+my_comparisons <- list( c("<73", "73-80"), c("<73", "> 80"), c("73-80", "> 80"))
+
+mean(lumi.1$pl_ptau217[lumi.1$csf_status == 0])
+mean(lumi.1$pl_ptau217[lumi.1$csf_status == 1])
+
+mean(lumi.2$pl_ptau217[lumi.2$csf_status == 0])
+mean(lumi.2$pl_ptau217[lumi.2$csf_status == 1])
+
+mean(lumi.3$pl_ptau217[lumi.3$csf_status == 0])
+mean(lumi.3$pl_ptau217[lumi.3$csf_status == 1])
+
+stat_test$p.adj <- round(stat_test$p.adj,3)
+stat_test$p <- round(stat_test$p,3)
+lumi$group <- interaction(lumi$csf_status, lumi$strat)
+
+ggplot(lumi, aes(x = csf_status, y = pl_ptau217, group = group)) +
+  geom_boxplot(aes(fill = factor(strat)), position = position_dodge(0.8), width = 0.7, outlier.shape = NA, alpha=0.7) +
+geom_jitter(aes(color = factor(strat)), 
+              size = 0.6, alpha = 0.25, 
+              position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.5)) +   scale_fill_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), labels = c("<73", "73-80", "> 80"), name="Legend") +
+  scale_color_manual(values = c("#4DBBD5FF", "#E64B35FF", "#3C5488FF"), guide = "none", labels = c("<73", "73-80", "> 80")) +
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none", labels = c("0" = "Negatives", "1" = "Positives")) +
+  scale_y_continuous(limits = c(0, 4), breaks = seq(0, 4, by = 0.5)) +
+  geom_hline(yintercept = 0.27, linetype = "dotted", color = "grey20") +
+  scale_x_discrete(labels = c("0" = "Negatives", "1" = "Positives")) +
+  labs(x = "AD status", y = "Plasma p-tau217 Lumipulse") +
+  theme_classic()+
+  stat_compare_means(label = "p.signif", method = "t.test", label.y=3.5)
+
+ggsave("Boxplot_age.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
+stat_test
+```
 
 
 
-
-Plots used in paper
-
-##Figure 2 Plot
+##Figure 2 Plots
 
 ```{r load figure data, echo=F}
 
 #Load datasets first and modify to make plotting easier
 
 ##Sex
-merged_gender <- read_xlsx("Fig2_Gender.xlsx")
-merged_gender <- merged_gender[,2:52]
-group1_gender <- cbind(merged_gender[0:2, 1:12], merged_gender[0:2, 50:51]) #males
-colnames(group1_gender) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
-group1_gender$group <- "1"
-group2_gender <- cbind(merged_gender[0:2, 13:24], merged_gender[0:2, 50:51]) #females
-colnames(group2_gender) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
-group2_gender$group <- "2"
-merged_gender2 <- bind_rows(group1_gender, group2_gender)
-merged_gender2$Cohort <- "Sex"
-merged_gender2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
+merged_sex <- read_xlsx("Fig2_Sex.xlsx")
+merged_sex <- merged_sex[,2:52]
+group1_sex <- cbind(merged_sex[0:2, 1:12], merged_sex[0:2, 50:51]) #males
+colnames(group1_sex) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
+group1_sex$group <- "1"
+group2_sex <- cbind(merged_sex[0:2, 13:24], merged_sex[0:2, 50:51]) #females
+colnames(group2_sex) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
+group2_sex$group <- "2"
+merged_sex2 <- bind_rows(group1_sex, group2_sex)
+merged_sex2$Cohort <- "Sex"
+merged_sex2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
 
 ##Education
 merged_education <- read_xlsx("Fig2_Education.xlsx")
@@ -2401,7 +2394,7 @@ merged_age2$Cohort <- "Age"
 merged_age2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint", "1 Cutpoint", "2 Cutpoint")
 
 
-plotdata <- bind_rows(merged_gender2, merged_education2, merged_CKD2,merged_diabetes2, merged_age2,merged_apoe2) 
+plotdata <- bind_rows(merged_sex2, merged_education2, merged_CKD2,merged_diabetes2, merged_age2,merged_apoe2) 
 openxlsx::write.xlsx(plotdata,file="Fig2_Plotdata.xlsx", rowNames =T)
 
 ```
@@ -2511,15 +2504,15 @@ ggsave("Fig2_Accuracy2cp.pdf",device = "pdf",width = 90, dpi=500, height = 90, u
 ##Intermediates
 
 #Alter data again for plotting
-igroup1_gender <- merged_gender[0:2, 34:39]
-colnames(igroup1_gender) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
-igroup1_gender$group <- "1"
-igroup2_gender <- merged_gender[0:2, 40:45]
-colnames(igroup2_gender) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
-igroup2_gender$group <- "2"
-imerged_gender <- bind_rows(igroup1_gender, igroup2_gender)
-imerged_gender$Cohort <- "Sex"
-imerged_gender$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
+igroup1_sex <- merged_sex[0:2, 34:39]
+colnames(igroup1_sex) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
+igroup1_sex$group <- "1"
+igroup2_sex <- merged_sex[0:2, 40:45]
+colnames(igroup2_sex) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
+igroup2_sex$group <- "2"
+imerged_sex <- bind_rows(igroup1_sex, igroup2_sex)
+imerged_sex$Cohort <- "Sex"
+imerged_sex$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
 
 #Education
 igroup1_education <- merged_education[0:2, 34:39]
@@ -2580,7 +2573,7 @@ imerged_age$Cohort <- "Age"
 imerged_age$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint", "1 Cutpoint", "2 Cutpoint")
 
 
-plotdata_i <- bind_rows(imerged_gender, imerged_education, imerged_CKD,imerged_diabetes,imerged_apoe, imerged_age)
+plotdata_i <- bind_rows(imerged_sex, imerged_education, imerged_CKD,imerged_diabetes,imerged_apoe, imerged_age)
 plotdata_i <- plotdata_i[grep("2 Cutpoint", plotdata_i$Cutpoint), ]
 
 openxlsx::write.xlsx(plotdata_i,file="Fig2_plotdata_intermediate.xlsx", rowNames =T)
@@ -2615,7 +2608,8 @@ ggsave("Fig2_Intermediates.pdf",device = "pdf",width = 70, dpi=500, height = 80,
 
 
 
-#In primary care (Age only)
+
+#Age only, in primary care (Age only, supplementary table 2)
 
 ```{r setup PC, echo=FALSE}
 library(boot)
@@ -3156,7 +3150,7 @@ openxlsx::write.xlsx(pvalues_age,file="Age_Pvalues_PC.xlsx", rowNames =T)
 
 ```
 
-#In Secondary care (Age only)
+#Age only, in Secondary care (Age only, supplementary table 2)
 
 ```{r pool secondary care data, eval=FALSE, include=FALSE}
 library(readxl)
@@ -3167,9 +3161,9 @@ Gothenburg <- read.xlsx("Gothenburg_data.xlsx")
 pooled <- rbind(BFMC, BBRC, Brescia, Gothenburg)
 ```
 
-```{r split by age (change for cohort), echo=F}
+```{r split by age pooled secondary care, echo=F}
 
-lumi <- X #change for the right dataset, make sure to change document title in the end
+lumi <- pooled
 lumi.df <- lumi
 
 lumi <- lumi.df
@@ -3681,7 +3675,7 @@ merged_age$G1 <- c(paste(participants_g1_csf0, "/", participants_g1_csf1), paste
 merged_age$G2 <- c(paste(participants_g2_csf0, "/", participants_g2_csf1), paste(participants_g2_csf0, "/", participants_g2_csf1))
 merged_age$G3 <- c(paste(participants_g3_csf0, "/", participants_g3_csf1), paste(participants_g3_csf0, "/", participants_g3_csf1))
 
-openxlsx::write.xlsx(merged_age,file="Age_X.xlsx", rowNames =T)
+openxlsx::write.xlsx(merged_age,file="Age_pooled_secondary.xlsx", rowNames =T)
 
 pvalues_age <- rbind(
   pvals_age,
@@ -3698,9 +3692,9 @@ openxlsx::write.xlsx(pvalues_age,file="Age_Pvalues_X.xlsx", rowNames =T)
 ```
 
 
+#Comorbidity comparisons in primary care (all, extended figure 3)
 
-#In primary care (all)
-
+##Analyses
 ```{r setup, echo=FALSE}
 library(boot)
 library(cutpointr) #Used for PPV and NPV
@@ -3719,7 +3713,7 @@ lumi$ptau217_sens95 <- ifelse(lumi$pl_ptau217 > 0.22, 1, 0)
 lumi.df <- lumi
 ```
 
-#Sex
+###Sex
 ```{r split by sex PC, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = sex)
@@ -4036,7 +4030,7 @@ openxlsx::write.xlsx(pvalues_gender,file="Sex_Pvalues_BFPC.xlsx", rowNames =T)
 
 ```
 
-##APOE
+###APOE
 ```{r split by APOE BFPC, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = apoe)
@@ -4357,7 +4351,7 @@ openxlsx::write.xlsx(pvalues_apoe,file="BFPC.xlsx", rowNames =T)
 
 ```
 
-##Diabetes
+###Diabetes
 ```{r split by diabetes, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = diabetes)
@@ -4675,7 +4669,7 @@ pvalues_diabetes$DeLong <- pval_delong
 openxlsx::write.xlsx(pvalues_diabetes,file="Diabetes_Pvalues_BFPC_new.xlsx", rowNames =T)
 ```
 
-##CKD
+###CKD
 ```{r split by CKD BFPC, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = CKD)
@@ -4994,7 +4988,7 @@ openxlsx::write.xlsx(pvalues_ckd,file="CKD_Pvalues_BFPC.xlsx", rowNames =T)
 ```
 
 
-##Education
+###Education
 ```{r split by education BFPC, echo=F}
 lumi <- lumi.df
 lumi$education_median <- ifelse(lumi$education < median(lumi$education, na.rm = TRUE), 0, 1)
@@ -5314,24 +5308,25 @@ openxlsx::write.xlsx(pvalues_education,file="Education_Pvalues_BFPC.xlsx", rowNa
 ```
 
 
+
 ##Figures 1 cutpoint
 
 ###Create plotdata
 
 ```{r figures BFPC set data, echo=F}
-merged_gender <- read_xlsx("Gender_BFPC.xlsx")
-rownames(merged_gender) <- merged_gender[[1]]  
-merged_gender <- merged_gender[ , -1]   
+merged_sex <- read_xlsx("Sex_BFPC.xlsx")
+rownames(merged_sex) <- merged_sex[[1]]  
+merged_sex <- merged_sex[ , -1]   
 
-group1_gender <- cbind(merged_gender[0:2, 1:12], merged_gender[0:2, 50:51])
-colnames(group1_gender) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
-group1_gender$group <- "1"
-group2_gender <- cbind(merged_gender[0:2, 13:24], merged_gender[0:2, 50:51])
-colnames(group2_gender) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
-group2_gender$group <- "2"
-merged_gender2 <- bind_rows(group1_gender, group2_gender)
-merged_gender2$Cohort <- "Sex"
-merged_gender2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
+group1_sex <- cbind(merged_sex[0:2, 1:12], merged_sex[0:2, 50:51])
+colnames(group1_sex) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
+group1_sex$group <- "1"
+group2_sex <- cbind(merged_sex[0:2, 13:24], merged_sex[0:2, 50:51])
+colnames(group2_sex) <- c("AUC", "AUC_ci_low", "AUC_ci_high", "Accuracy", "Accuracy_ci_low", "Accuracy_ci_high", "PPV", "PPV_ci_low","PPV_ci_high", "NPV", "NPV_ci_low", "NPV_ci_high", "G1", "G2")
+group2_sex$group <- "2"
+merged_sex2 <- bind_rows(group1_sex, group2_sex)
+merged_sex2$Cohort <- "Sex"
+merged_sex2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
 
 #Education
 merged_education <- read_xlsx("Education_BFPC.xlsx")
@@ -5409,7 +5404,7 @@ merged_age2$Cohort <- "Age"
 merged_age2$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint", "1 Cutpoint", "2 Cutpoint")
 
 
-plotdata <- bind_rows(merged_gender2, merged_education2, merged_CKD2,merged_diabetes2, merged_age2,merged_apoe2) 
+plotdata <- bind_rows(merged_sex2, merged_education2, merged_CKD2,merged_diabetes2, merged_age2,merged_apoe2) 
 
 plotdata <- plotdata[grep("1 Cutpoint", plotdata$Cutpoint), ]
 plotdata$modeltype <- factor(plotdata$group, levels = c(2,1))
@@ -5445,52 +5440,6 @@ ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = Accuracy *
         axis.title.x=element_text(face="bold"))
 ```
 
-###PPV
-```{r PPV figure 1cp PC, echo=F}
-
-ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = PPV * 100,
-                          ymin = PPV_ci_low * 100,
-                          ymax = PPV_ci_high * 100,
-                          color = factor(group, levels = group_order)))+
-  geom_errorbar(aes(x = factor(Cohort, levels=desired_order),ymax = PPV_ci_high * 100,ymin = PPV_ci_low * 100),
-                width = 0.2,linewidth = 0.5,position = position_dodge(width = 0.75)) +
-  geom_point(aes(x = factor(Cohort, levels=desired_order),y = PPV * 100,color = factor(group, levels = group_order)),
-             position = position_dodge(width = 0.75),size = 4,stroke = 0.5) +
-  coord_flip()+
-  scale_y_continuous(limits=c(50,115),breaks = seq(50,115, by=10),expand =c(0,0))+
-  scale_colour_manual(values = c("1" = "#4DBBD5FF", "2" = "#E64B35FF", "3" = "#3C5488FF"), guide = "none") +
-  geom_text(aes(label = sprintf("%.f (%.f-%.f)", PPV*100, PPV_ci_low*100, PPV_ci_high*100), group=factor(group, levels = group_order)), 
-           position = position_dodge(width=0.75), y = 106, size =3, color="black") +
-  labs(title = element_blank(),x = element_blank(),y = "PPV (%)") +
-  theme_classic()+
-  theme(axis.text.x=element_text(size=10),
-        axis.text.y=element_text(size=10,vjust=-2, face="bold"),
-        axis.ticks.y = element_blank(),
-        axis.title.x=element_text(face="bold"))
-```
-
-###NPV
-```{r NPV figure 1cp PC, echo=F}
-ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = NPV * 100,
-                          ymin = NPV_ci_low * 100,
-                          ymax = NPV_ci_high * 100,
-                          color = factor(group, levels = group_order)))+
-  geom_errorbar(aes(x = factor(Cohort, levels=desired_order),ymax = NPV_ci_high * 100,ymin = NPV_ci_low * 100),
-                width = 0.2,linewidth = 0.5,position = position_dodge(width = 0.75)) +
-  geom_point(aes(x = factor(Cohort, levels=desired_order),y = NPV * 100,color = factor(group, levels = group_order)),
-             position = position_dodge(width = 0.75),size = 4,stroke = 0.5) +
-  coord_flip()+
-  scale_y_continuous(limits=c(50,115),breaks = seq(50,115, by=10),expand =c(0,0))+
-  scale_colour_manual(values = c("1" = "#4DBBD5FF", "2" = "#E64B35FF", "3" = "#3C5488FF"), guide = "none") +
-  geom_text(aes(label = sprintf("%.f (%.f-%.f)", NPV*100, NPV_ci_low*100, NPV_ci_high*100), group=factor(group, levels = group_order)), 
-           position = position_dodge(width=0.75), y = 106, size = 3, color="black") +
-  labs(title = element_blank(),x = element_blank(),y = "NPV (%)") +
-  theme_classic()+
-  theme(axis.text.x=element_text(size=10),
-        axis.text.y=element_text(size=10,vjust=-1, face="bold"),
-        axis.ticks.y = element_blank())
-```
-
 ###AUC
 ```{r AUC figure 1cp PC, echo=F}
 ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = AUC * 100,
@@ -5520,7 +5469,7 @@ ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = AUC * 100,
 
 
 
-###Figures 2 cutpoint
+##Figures 2 cutpoint
 
 ```{r figures 2 cutpoint, echo=F}
 plotdata <- read.xlsx("Plotdata_BFPC.xlsx")
@@ -5559,67 +5508,18 @@ ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = Accuracy *
 ```
 
 
-###PPV 2
-```{r PPV figure 2cp PC, echo=F}
-
-ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = PPV * 100,
-                          ymin = PPV_ci_low * 100,
-                          ymax = PPV_ci_high * 100,
-                          color = factor(group, levels = group_order)))+
-  geom_errorbar(aes(x = factor(Cohort, levels=desired_order),ymax = PPV_ci_high * 100,ymin = PPV_ci_low * 100),
-                width = 0.2,linewidth = 0.5,position = position_dodge(width = 0.75)) +
-  geom_point(aes(x = factor(Cohort, levels=desired_order),y = PPV * 100,color = factor(group, levels = group_order)),
-             position = position_dodge(width = 0.75),size = 4,stroke = 0.5) +
-  coord_flip()+
-  scale_y_continuous(limits=c(70,115),breaks = seq(70,115, by=10),expand =c(0,0))+
-  scale_colour_manual(values = c("1" = "#4DBBD5FF", "2" = "#E64B35FF", "3" = "#3C5488FF"), guide = "none") +
-  geom_text(aes(label = sprintf("%.f (%.f-%.f)", PPV*100, PPV_ci_low*100, PPV_ci_high*100), group=factor(group, levels = group_order)), 
-           position = position_dodge(width=0.75), y = 106, size =3, color="black") +
-  labs(title = element_blank(),x = element_blank(),y = "PPV (%)") +
-  theme_classic()+
-  theme(axis.text.x=element_text(size=10),
-        axis.text.y=element_text(size=10,vjust=-2, face="bold"),
-        axis.ticks.y = element_blank(),
-        axis.title.x=element_text(face="bold"))
-
-```
-
-###NPV 2
-```{r NPV figure 2cp PC, echo=F}
-
-ggplot(data=plotdata, aes(x= factor(Cohort, levels=desired_order),y = NPV * 100,
-                          ymin = NPV_ci_low * 100,
-                          ymax = NPV_ci_high * 100,
-                          color = factor(group, levels = group_order)))+
-  geom_errorbar(aes(x = factor(Cohort, levels=desired_order),ymax = NPV_ci_high * 100,ymin = NPV_ci_low * 100),
-                width = 0.2,linewidth = 0.5,position = position_dodge(width = 0.75)) +
-  geom_point(aes(x = factor(Cohort, levels=desired_order),y = NPV * 100,color = factor(group, levels = group_order)),
-             position = position_dodge(width = 0.75),size = 4,stroke = 0.5) +
-  coord_flip()+
-  scale_y_continuous(limits=c(60,115),breaks = seq(60,115, by=10),expand =c(0,0))+
-  scale_colour_manual(values = c("1" = "#4DBBD5FF", "2" = "#E64B35FF", "3" = "#3C5488FF"), guide = "none") +
-  geom_text(aes(label = sprintf("%.f (%.f-%.f)", NPV*100, NPV_ci_low*100, NPV_ci_high*100), group=factor(group, levels = group_order)), 
-           position = position_dodge(width=0.75), y = 106, size = 3, color="black") +
-  labs(title = element_blank(),x = element_blank(),y = "NPV (%)") +
-  theme_classic()+
-  theme(axis.text.x=element_text(size=10),
-        axis.text.y=element_text(size=10,vjust=-1, face="bold"),
-        axis.ticks.y = element_blank())
-
-```
-
 
 ###Intermediate
-```{r NPV figure 1 cutpoint, echo=F}
-igroup1_gender <- merged_gender[0:2, 34:39]
-colnames(igroup1_gender) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
-igroup1_gender$group <- "1"
-igroup2_gender <- merged_gender[0:2, 40:45]
-colnames(igroup2_gender) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
-igroup2_gender$group <- "2"
-imerged_gender <- bind_rows(igroup1_gender, igroup2_gender)
-imerged_gender$Cohort <- "Sex"
-imerged_gender$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
+```{r Intermediate figure primary care only, echo=F}
+igroup1_sex <- merged_sex[0:2, 34:39]
+colnames(igroup1_sex) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
+igroup1_sex$group <- "1"
+igroup2_sex <- merged_sex[0:2, 40:45]
+colnames(igroup2_sex) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")
+igroup2_sex$group <- "2"
+imerged_sex <- bind_rows(igroup1_sex, igroup2_sex)
+imerged_sex$Cohort <- "Sex"
+imerged_sex$Cutpoint <- c("1 Cutpoint", "2 Cutpoint","1 Cutpoint", "2 Cutpoint")
 
 igroup1_education <- merged_education[0:2, 34:39]
 colnames(igroup1_education) <- c("Intermediaten", "Intermediaten_ci_low", "Intermediaten_ci_high", "Intermediatep", "Intermediatep_ci_low", "Intermediatep_ci_high")

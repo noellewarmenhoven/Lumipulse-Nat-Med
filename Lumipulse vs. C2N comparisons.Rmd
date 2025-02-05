@@ -4,10 +4,10 @@ author: "Noelle"
 date: "2024-08-08"
 output: html_document
 ---
-This document contains the code used for analyzing p-tau217 Lumipulse performances, compared to p-tau217 C2N and %p-tau217 C2N.
+This document contains the code used for analyzing p-tau217 Lumipulse performances compared to p-tau217 C2N and %p-tau217 C2N.
 
-#In primary care
-#BFPC
+#In primary care only (part of Figure 5)
+##BFPC analyses
 ```{r C2N comparisons BFPC, echo=F}
 lumi <- read_xlsx("BFPC_data.xlsx")
 
@@ -542,7 +542,7 @@ pvalues_cognition <- rbind(
 openxlsx::write.xlsx(pvalues_cognition,file="BFPC_pvals_C2N.xlsx", rowNames =T)
 ```
 
-#In secondary care (pooled)
+##In secondary care (pooled data) analyses
 
 ```{r C2N comparisons pooled, echo=F}
 BFMC <- read_xlsx("BFMC_data.xlsx")
@@ -1085,9 +1085,9 @@ openxlsx::write.xlsx(pvalues_cognition,file="C2N_pooled_pvals.xlsx", rowNames =T
 ```
 
 
-Plots
+##Plots
 
-##Boxplots for p-tau217 C2N in pooled and primary care
+###Boxplots for p-tau217 C2N in pooled and primary care
 ```{r boxplots p-tau217, echo=F}
 pooled <- lumi
 datasets <- list(pooled, BFPC)
@@ -1118,7 +1118,7 @@ for (i in seq_along(datasets)) {
 
 ```
 
-##Boxplots for %p-tau217 C2N in pooled and primary care
+###Boxplots for %p-tau217 C2N in pooled and primary care
 
 ```{r boxplots ratio p-tau217, echo=F}
 
@@ -1149,7 +1149,7 @@ for (i in seq_along(datasets)) {
 
 ```
 
-##Fig5 plot
+###Fig5 plots
 
 ```{r figure Pooled etc 1cp, echo=F}
 library(readxl)
@@ -1522,7 +1522,8 @@ ggsave("Intermediates_pooled_v3.pdf",device = "pdf",width = 120, dpi=500, height
 ```
 
 
-#Comorbidity plots C2N p-tau217
+
+#Comorbidity plots C2N p-tau217 (extended data 7)
 ```{r setup c2n ptau217, echo=FALSE}
 library(boot)
 library(cutpointr) #Used for PPV and NPV
@@ -1535,7 +1536,6 @@ library(ggpubr)
 
 BFMC <- read_xlsx("BFMC_data.xlsx")
 BFPC <- read_xlsx("BFPC_data.xlsx")
-Bre <- read_xlsx("Brescia_data.xlsx")
 Got <- read_xlsx("Gothenburg_data_C2N.xlsx")
 Bres <- read_xlsx("Brescia_data_C2N.xlsx")
 
@@ -1548,6 +1548,7 @@ lumi$ptau217_spec90_c2n <- ifelse(lumi$p_tau217_v2 > 2.27, 1, 0)
 lumi.df <- lumi
 ```
 
+##Boxplots sex
 ```{r boxplot sex c2n ptau217, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = sex)
@@ -1574,6 +1575,7 @@ ggplot(lumi, aes(x = csf_status, y = p_tau217_v2, group = interaction(csf_status
 ggsave("Boxplot_sex_C2Nptau217.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
 ```
 
+##Boxplots APOE
 ```{r boxplot APOE c2n ptau217, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = apoe)
@@ -1602,6 +1604,7 @@ ggsave("Boxplot_APOE_C2Nptau217.pdf",device = "pdf",width = 120, dpi=500, height
 
 ```
 
+##Boxplots diabetes
 ```{r boxplot diabetes c2n ptau217, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = diabetes)
@@ -1630,6 +1633,7 @@ ggsave("Boxplot_diabetes_C2Nptau217.pdf",device = "pdf",width = 120, dpi=500, he
 
 ```
 
+##Boxplots CKD
 ```{r boxplot CKD c2n ptau217, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = CKD)
@@ -1658,6 +1662,7 @@ ggsave("Boxplot_CKD_C2Nptau217.pdf",device = "pdf",width = 120, dpi=500, height 
 
 ```
 
+##Boxplots Education
 ```{r boxplot Educ c2n ptau217, echo=F}
 lumi <- lumi.df
 lumi$education_median <- ifelse(lumi$education < median(lumi$education, na.rm = TRUE), 0, 1)
@@ -1688,6 +1693,7 @@ ggsave("Boxplot_Education_C2Nptau217.pdf",device = "pdf",width = 120, dpi=500, h
 
 ```
 
+##Boxplots Age
 ```{r boxplot age c2n ptau217, echo=F}
 library(ggsignif)
 lumi <- lumi.df
@@ -1730,7 +1736,7 @@ stat_test
 
 
 
-#Comorbidity plots C2N %p-tau217
+#Comorbidity plots C2N %p-tau217 (extended data 8)
 ```{r setup %c2n, echo=FALSE}
 library(boot)
 library(cutpointr) #Used for PPV and NPV
@@ -1743,7 +1749,6 @@ library(ggpubr)
 
 BFMC <- read_xlsx("BFMC_data.xlsx")
 BFPC <- read_xlsx("BFPC_data.xlsx")
-Bre <- read_xlsx("Brescia_data.xlsx")
 Got <- read_xlsx("Gothenburg_data_C2N.xlsx")
 Bres <- read_xlsx("Brescia_data_C2N.xlsx")
 
@@ -1756,6 +1761,7 @@ lumi$ptau217_spec90_c2n <- ifelse(lumi$p_tau217_v2 > 2.27, 1, 0)
 lumi.df <- lumi
 ```
 
+##Boxplots sex
 ```{r boxplot sex %c2n, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = sex)
@@ -1781,6 +1787,7 @@ geom_jitter(aes(color = factor(strat)),
 ggsave("Boxplot_sex_ratioC2N.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
 ```
 
+##Boxplots APOE
 ```{r boxplot APOE %c2n, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = apoe)
@@ -1808,6 +1815,7 @@ ggsave("Boxplot_APOE_ratioC2N.pdf",device = "pdf",width = 120, dpi=500, height =
 
 ```
 
+##Boxplots diabetes
 ```{r boxplot diabetes %c2n, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = diabetes)
@@ -1835,6 +1843,7 @@ ggsave("Boxplot_diabetes_ratioC2N.pdf",device = "pdf",width = 120, dpi=500, heig
 
 ```
 
+##Boxplots CKD
 ```{r boxplot CKD %c2n, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = CKD)
@@ -1862,6 +1871,7 @@ ggsave("Boxplot_CKD_ratioC2N.pdf",device = "pdf",width = 120, dpi=500, height = 
 
 ```
 
+##Boxplots education
 ```{r boxplot Educ %c2n, echo=F}
 lumi <- lumi.df
 lumi$education_median <- ifelse(lumi$education < median(lumi$education, na.rm = TRUE), 0, 1)
@@ -1890,6 +1900,7 @@ ggsave("Boxplot_Education_ratioC2N.pdf",device = "pdf",width = 120, dpi=500, hei
 
 ```
 
+##Boxplots age
 ```{r boxplot age %c2n, echo=F}
 library(ggsignif)
 lumi <- lumi.df
@@ -1930,9 +1941,10 @@ stat_test
 
 
 
-#Comorbidity comparisons for age with C2N and Lumipulse
 
-##Set up dataset for this
+#Comorbidity comparisons for age with C2N and Lumipulse (extended data 9)
+
+##Set up dataset for this analysis
 ```{r setup, include=FALSE}
 library(boot)
 library(cutpointr) #Used for PPV and NPV
@@ -1944,7 +1956,6 @@ library(openxlsx)
 
 BFMC <- read_xlsx("BFMC_data.xlsx")
 BFPC <- read_xlsx("BFPC_data.xlsx")
-Bre <- read_xlsx("Brescia_data.xlsx")
 Got <- read_xlsx("Gothenburg_data_C2N.xlsx")
 Bres <- read_xlsx("Brescia_data_C2N.xlsx")
 
@@ -2507,7 +2518,7 @@ results_1cp_c2nratio <- data.frame(
 results_1cp <- bind_rows(results_1cp_lumi, results_1cp_c2n, results_1cp_c2nratio)
 results_1cp <- results_1cp %>% rownames_to_column(var="Cutpoint")
 openxlsx::write.xlsx(results_1cp,
-                      file="C2NPooled_1cp_age.xlsx")
+                      file="C2NvsLumiPooled_1cp_age.xlsx")
 
 stat_indices <- list(
   "Accuracy pval Lumi12" = 10,"PPV pval Lumi12" =11,"NPV pval Lumi12" = 12,
@@ -3294,7 +3305,7 @@ merged_comps_age$G1 <- c(paste(participants_g1_csf0, "/", participants_g1_csf1),
 merged_comps_age$G2 <- c(paste(participants_g2_csf0, "/", participants_g2_csf1), paste(participants_g2_csf0, "/", participants_g2_csf1))
 merged_comps_age$G3 <- c(paste(participants_g3_csf0, "/", participants_g3_csf1), paste(participants_g3_csf0, "/", participants_g3_csf1))
 
-openxlsx::write.xlsx(merged_comps_age,file="C2N_Age.xlsx", rowNames =T)
+openxlsx::write.xlsx(merged_comps_age,file="C2NvsLumi_Age.xlsx", rowNames =T)
 
 
 pvalues_age <- rbind(
@@ -3303,12 +3314,13 @@ pvalues_age <- rbind(
   pvals_age_2cp
 )
 pvalues_age <- pvalues_age %>% drop_na()
-openxlsx::write.xlsx(pvalues_age,file="C2N_Age_Pvalues.xlsx", rowNames =T)
+openxlsx::write.xlsx(pvalues_age,file="C2NvsLumi_Age_Pvalues.xlsx", rowNames =T)
 
 ```
 
+##Plot extended data 9
 ```{r forest plot Age 1cp, echo=F}
-merged_comps <- read_excel("C2Npooled_1cp_age.xlsx")
+merged_comps <- read_excel("C2NvsLumiPooled_1cp_age.xlsx")
 
 plot_auc1 <- cbind(merged_comps[0:3, 3:5])
 plot_auc1$group <- c("1", "1", "1")
@@ -3432,7 +3444,7 @@ lumi <- lumi %>% drop_na(p_tau217_v2,p_tau217_ratio_v2)
 lumi.df <- lumi
 ```
 
-#SCD
+##SCD
 ```{r comp SCD, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% filter(cognitive_status == "1") 
@@ -3962,7 +3974,7 @@ openxlsx::write.xlsx(pvalues_scd,file="C2Ncomp_SCD_pvals.xlsx", rowNames =T)
 
 ```
 
-##Figure SCD
+###Figure SCD
 ```{r SCD Fig 1cp, echo=F}
 merged_comps_scd <- read_xlsx("C2Ncomp_SCD.xlsx")
 
@@ -4070,7 +4082,7 @@ ggplot(data=plotdata, aes(y = factor(Measure, levels=group_order), x = Measure1 
 ggsave("C2Ncomps_SCD_2cp.pdf",device = "pdf",width = 90, dpi=500, height = 60, units = "mm")
 ```
 
-#MCI
+##MCI
 ```{r comp MCI, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% filter(cognitive_status == "2")
@@ -4603,7 +4615,7 @@ openxlsx::write.xlsx(pvalues_mci,file="C2Ncomp_MCI_pvals.xlsx", rowNames =T)
 
 ```
 
-##Figure MCI
+###Figure MCI
 ```{r MCI Fig 1cp, echo=F}
 merged_comps_scd <- read_xlsx("C2Ncomp_MCI.xlsx")
 
@@ -4713,7 +4725,7 @@ ggsave("C2Ncomps_MCI_2cp.pdf",device = "pdf",width = 90, dpi=500, height = 60, u
 ```
 
 
-#Dementia
+##Dementia
 ```{r comp Dem, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% filter(cognitive_status == "3")

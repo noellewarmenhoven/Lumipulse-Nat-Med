@@ -4,7 +4,7 @@ author: "Noelle"
 date: "2024-10-24"
 output: html_document
 ---
-This document contains the code used for analyzing p-tau217/AB42 performances, compared to p-tau217.
+This document contains the code used for analyzing p-tau217/AB42 performances, compared to p-tau217 (Lumipulse).
 
 ```{r setup, include=FALSE, echo=F}
 library(readxl)
@@ -45,8 +45,9 @@ Goth <- Goth %>% drop_na(ptau217_ab42)
 pooled <- rbind(BFMC, BBRC, Bres, Goth)
 ```
 
-#LUMI p-tau217 VS. p-tau217/AB42 (pooled)
+#LUMI p-tau217 VS. p-tau217/AB42 (pooled, analyses Figure 4)
 
+##Boxplots (extended data 4)
 ```{r boxplots, echo=F}
 
 datasets <- list(pooled, BFPC)
@@ -90,6 +91,7 @@ for (i in seq_along(datasets)) {
 
 ```
 
+##Analysis
 ```{r run comparison}
 
 datasets <- list(pooled,BFPC)
@@ -247,7 +249,7 @@ run_analysis <- function(lumi, name) {
   
   merged_results_1cp <- rbind(results_1cp_ptau217, results_1cp_ptau217ab42)
   
-  #Greyzone
+  #Calculate the intermediate participants
   
   lumi <- lumi %>%
     mutate(greyzone_lumi = case_when(
@@ -304,7 +306,7 @@ run_analysis <- function(lumi, name) {
   results_underH0_diff <- bootstrap_replicates_grey[, 5] - mean(bootstrap_replicates_grey[, 5])
   p_value_grey <- mean(abs(results_underH0_diff) >= abs(boot_diff))
   
-  #Two cutpoints
+  #Two cutoff approach
   
   f_comp_stats_2cp <- function(data, indices) {
     d <- as.data.frame(data[indices,])
@@ -330,24 +332,23 @@ run_analysis <- function(lumi, name) {
     
     #ptau217ab42
     
-    d_c2n  <- d %>% filter(greyzone_ptau217ab42 != 2)
+    d_2  <- d %>% filter(greyzone_ptau217ab42 != 2)
   
     #Create confusion matrix1
-    c2nv_tp=sum(d_c2n$csf_status==1 & d_c2n$ptau217_ab42_spec90==1)
-    c2nv_fp=sum(d_c2n$csf_status==0 & d_c2n$ptau217_ab42_spec90==1)
-    c2nv_tn=sum(d_c2n$csf_status==0 & d_c2n$ptau217_ab42_spec90==0)
-    c2nv_fn=sum(d_c2n$csf_status==1 & d_c2n$ptau217_ab42_spec90==0)
+    d2_tp=sum(d_2$csf_status==1 & d_2$ptau217_ab42_spec90==1)
+    d2_fp=sum(d_2$csf_status==0 & d_2$ptau217_ab42_spec90==1)
+    d2_tn=sum(d_2$csf_status==0 & d_2$ptau217_ab42_spec90==0)
+    d2_fn=sum(d_2$csf_status==1 & d_2$ptau217_ab42_spec90==0)
     
     #Accuracy1
-    acc_ptau217ab42=(c2nv_tp+c2nv_tn)/(c2nv_tp+c2nv_tn+c2nv_fn+c2nv_fp)
+    acc_ptau217ab42=(d2_tp+d2_tn)/(d2_tp+d2_tn+d2_fn+d2_fp)
     
     #Calculate PPV and NPV (cutpointr)1
-    PPV_ptau217ab42=ppv(tp = c2nv_tp,fp = c2nv_fp,
-            tn = c2nv_tn,fn = c2nv_fn)
+    PPV_ptau217ab42=ppv(tp = d2_tp,fp = d2_fp,
+            tn = d2_tn,fn = d2_fn)
     
-    NPV_ptau217ab42=npv(tp = c2nv_tp,fp = c2nv_fp,
-            tn = c2nv_tn,fn = c2nv_fn)
-    
+    NPV_ptau217ab42=npv(tp = d2_tp,fp = d2_fp,
+            tn = d2_tn,fn =d2_fn)
     
     ##Different comparisons
     
@@ -414,7 +415,6 @@ run_analysis <- function(lumi, name) {
   
   merged_results_2cp <- rbind(results_2cp_lumi, results_2cp_ptau217ab42)
   
-  
   stat_indices <- list(
     "Accuracy pval Lumi vs. ptau217ab42" = 7,
     "PPV pval Lumi vs. ptau217ab42" = 8,
@@ -448,7 +448,6 @@ return(list(merged_comps_lumi = merged_comps_lumi, pvalues_lumi = pvalues_lumi))
 }
 output_directory <- "LP/"
 
-
 for (i in seq_along(datasets)) {
   lumi <- datasets[[i]]
   name <- dataset_names[i]
@@ -460,7 +459,8 @@ for (i in seq_along(datasets)) {
 ```
 
 
-##Figures pooled
+
+##Figures for Figure 4
 
 ```{r Figures 1cp, echo=F}
 library(readxl)
@@ -799,7 +799,7 @@ ggsave("LP_Intermediates_pooled.pdf",device = "pdf",width = 100, dpi=500, height
 
 ```
 
-#Comorbidity plots p-tau217 AB42
+#Comorbidity plots p-tau217 AB42 (extended data 5)
 ##P-tau217/AB42 SET CUTOFFS AND SCALE CORRECTLY
 
 ```{r setup ptau217ab42 data, echo=FALSE}
@@ -831,7 +831,8 @@ lumi.df <- lumi
 
 ```
 
-##Boxplots sex ptau217ab42
+##Boxplots
+###Boxplots sex ptau217ab42
 ```{r boxplot sex ptau217ab42, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = sex)
@@ -858,7 +859,7 @@ ggplot(lumi, aes(x = csf_status, y = ptau217_ab42, group = interaction(csf_statu
 ggsave("Boxplot_sex_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, height = 80, units = "mm")
 ```
 
-##Boxplots APOE ptau217ab42
+###Boxplots APOE ptau217ab42
 ```{r boxplot APOE ptau217ab42, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = apoe)
@@ -888,7 +889,7 @@ ggsave("Boxplot_APOE_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, heig
 
 ```
 
-##Boxplots Diabetes ptau217ab42
+###Boxplots Diabetes ptau217ab42
 ```{r boxplot diabetes ptau217ab42, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = diabetes)
@@ -916,7 +917,7 @@ ggsave("Boxplot_diabetes_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, 
 
 ```
 
-##Boxplots CKD ptau217ab42
+###Boxplots CKD ptau217ab42
 ```{r boxplot CKD ptau217ab42, echo=F}
 lumi <- lumi.df
 lumi <- lumi %>% rename(strat = CKD)
@@ -945,7 +946,7 @@ ggsave("Boxplot_CKD_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500, heigh
 
 ```
 
-##Boxplots Education ptau217ab42
+###Boxplots Education ptau217ab42
 ```{r boxplot education ptau217ab42, echo=F}
 lumi <- lumi.df
 lumi$education <- as.numeric(lumi$education)
@@ -975,7 +976,7 @@ ggsave("Boxplot_Education_ptau217_ab42.pdf",device = "pdf",width = 120, dpi=500,
 
 ```
 
-##Boxplots Age ptau217ab42
+###Boxplots Age ptau217ab42
 ```{r boxplot age ptau217ab42, echo=F}
 library(ggsignif)
 lumi <- lumi.df

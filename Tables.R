@@ -1,3 +1,5 @@
+#This file contains the codes used to create Table 1 & Supplementary tables
+
 library(dplyr)
 library(pROC)
 library(boot)
@@ -25,7 +27,6 @@ lumi <- rbind(BFMC, Goth, BBRC, Bres, BFPC)
 lumi$ptau217_spec90_lumi <- ifelse(lumi$pl_ptau217 > 0.27, 1, 0) 
 
 foldchange <- median(lumi$pl_ptau217[lumi$ptau217_spec90_lumi == 1]) / median(lumi$pl_ptau217[lumi$ptau217_spec90_lumi == 0])
-#range(lumi$foldchange)
 
 #alter variable types 
 lumi$mmse_score <- as.numeric(as.character(lumi$mmse_score))
@@ -37,7 +38,7 @@ lumi$diabetes <- as.factor(as.numeric(lumi$diabetes))
 lumi$csf_status <- as.factor(as.numeric(lumi$csf_status))
 lumi$ab42_40 <- as.numeric(as.character(lumi$ab42_40))
 lumi$ptau181 <- as.numeric(as.character(lumi$ptau181))
-#add cohort variable
+#add cohort variable for stratification
 lumi$Cohort <- factor(lumi$Cohort, levels=c("Malmo", "Gothenburg", "Barcelona", "Brescia", "Sweden"))
 
 #Create table 1
@@ -69,7 +70,7 @@ lumi <- rbind(pooled, BFPC)
 
 #create p-tau217/AB42 ratio
 lumi$ptau217_ab42 <- (lumi$pl_ptau217)/(lumi$ab42)
-lumi$ptau217_ab42[is.infinite(lumi$ptau217_ab42)] <- NA
+lumi$ptau217_ab42[is.infinite(lumi$ptau217_ab42)] <- NA 
 lumi <- lumi %>% drop_na(ptau217_ab42)
 
 #change variable types
